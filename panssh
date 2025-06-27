@@ -1,0 +1,304 @@
+#!/bin/bash
+
+###############################################################################
+# panssh - Pantheon interactive SSH session emulator
+#
+# Emulates an interactive ssh connection to a Pantheon site's application
+# environment.
+#
+# Version: 1.0.0
+# 
+# Author: Andy Inman - andy@lastcallmedia.com
+# Copyright (c) 2025 Last Call Media
+# License: MIT
+###############################################################################
+
+# --- Configuration ---
+readonly SSH_PORT="2222"
+
+readonly SITES_FILE="$HOME/.panssh.sites"
+readonly PANSSH_TEMP_DIR="/tmp/panssh-$USER"
+mkdir -p -m 700 "$PANSSH_TEMP_DIR"
+
+readonly SSH_GENERAL_OPTIONS=" \
+  -o ControlMaster=auto \
+  -o ControlPath=$PANSSH_TEMP_DIR/cm-%C \
+  -o ControlPersist=5m \
+  -o StrictHostKeyChecking=no \
+  -o ConnectTimeout=30"
+readonly SSH_OPTIONS="-p $SSH_PORT $SSH_GENERAL_OPTIONS"
+readonly SCP_OPTIONS="-q -P $SSH_PORT $SSH_GENERAL_OPTIONS"
+
+# --- Load SITE_IDs from config ---
+if [[ ! -f "$SITES_FILE" ]]; then
+    echo "🟡 Sites file not found at: $SITES_FILE"
+    echo
+    echo "To create it, run:"
+    echo "  terminus site:list --format=csv --fields=name,id > $SITES_FILE"
+    echo
+    exit 1
+fi
+
+# --- Parse site.env argument ---
+if [[ ! "$1" =~ ^([a-zA-Z0-9\-]+)\.([a-zA-Z0-9\-]+)$ ]]; then
+    echo -e "\nUsage examples:\n"
+    echo -e "  panssh site.env\n"
+    echo -e "  panssh site.env \"commands\"\n"
+    echo -e "  panssh site.env < script.sh\n"
+    echo -e "  echo \"commands\" | site.env\n"
+    echo -e "Special commands:\n"
+    echo -e "  View a file: .vw <filepath>\n"
+    echo -e "  Edit a file: .ed <filepath>\n"
+    echo -e "  Toggle automatic directory listing: .ls\n"
+    exit 1
+fi
+
+readonly SITE_NAME="${BASH_REMATCH[1]}"
+readonly ENV_ID="${BASH_REMATCH[2]}"
+
+declare -A SITE_LOOKUP
+
+# Read CSV, skip header
+while IFS=, read -r NAME ID; do
+    [[ "$NAME" == "Name" ]] && continue
+    SITE_LOOKUP["$NAME"]="$ID"
+done < "$SITES_FILE"
+
+readonly SITE_ID="${SITE_LOOKUP[$SITE_NAME]}"
+readonly USER="$ENV_ID.$SITE_ID"
+readonly HOST="appserver.$ENV_ID.$SITE_ID.drush.in"
+
+if [[ -z "$SITE_ID" ]]; then
+    echo "❌ Site $SITE_NAME not found in $SITES_FILE"
+    exit 1
+fi
+
+# --- SSH wrapper ---
+ssh_exec() {
+    local cmd=$(printf '%q' "$1")
+    ssh $SSH_OPTIONS "$USER@$HOST" "echo $cmd | bash; exit \${PIPESTATUS[1]}"
+    return $?
+}
+
+# --- SSH wrapper with current directory tracking---
+ssh_exec_track() {
+    local cmd="$1"
+    local marker="___PANSSH_CWD___"
+    local status=0
+
+    while IFS= read -r line; do
+        if [[ "$line" == "$marker "* ]]; then
+            local meta="${line#"$marker "}"
+            status="${meta%%,*}"
+            current_dir="${meta#*,}"
+        else
+            echo "$line"
+        fi
+    done < <(
+        ssh $SSH_OPTIONS "$USER@$HOST" \
+            "echo $(printf '%q' "$cmd; echo $marker \$?,\$(pwd)") | bash"
+    )
+
+    return "$status"
+}
+
+
+
+# --- SSH connection close ---
+cleanup_ssh() {
+    local status=$?
+    ssh -O exit $SSH_OPTIONS "$USER@$HOST" 2>/dev/null
+    exit $status
+}
+trap cleanup_ssh EXIT
+
+# --- Handle commands from command-line or stdin ---
+if [[ $# -gt 1 ]] || ! [ -t 0 ]; then
+    if [[ $# -gt 1 ]]; then
+        shift
+        cmd="$*"
+    else
+        cmd=$(cat)
+    fi
+    ssh_exec "$cmd"
+    exit $?
+fi
+
+# --- File transfer between local and host ---
+transfer_file() {
+    local from="$1"
+    local to="$2"
+    scp $SCP_OPTIONS "$from" "$to"
+}
+
+# --- Remote edit command handler ---
+launch_editor() {
+    local file="$1"
+    shift
+    local editor_args=("$@")
+
+    if [[ -n "$EDITOR" ]]; then
+        "$EDITOR" "${editor_args[@]}" "$file"
+    elif command -v nano >/dev/null 2>&1; then
+        nano "${editor_args[@]}" "$file"
+    elif command -v vim >/dev/null 2>&1; then
+        vim "${editor_args[@]}" "$file"
+    else
+        echo "❌ No editor found. Set \$EDITOR or install nano or vim."
+        return 1
+    fi
+}
+
+view_remote_file() {
+    local remote_path="$1"
+    shift
+    local editor_args=("$@")
+
+    # Resolve full remote path
+    if [[ "$remote_path" != /* ]]; then
+        remote_path="$current_dir/$remote_path"
+    fi
+
+    # Create a temp file for local editing
+    local local_file
+    local_file="$(mktemp $PANSSH_TEMP_DIR/panssh-edit.XXXXXX)"
+
+    # Download file from remote if it exists
+    if ! ssh_exec "[ -f \"$remote_path\" ]"; then
+        echo "❓ File not found."
+        return 1
+    elif ! ssh_exec "[ -r \"$remote_path\" ]"; then
+        echo "🚫 File is not readable."
+        return 1
+    else
+        transfer_file "$USER@$HOST:$remote_path" "$local_file"
+    fi
+
+    # Run editor
+    launch_editor "$local_file" "${editor_args[@]}"
+    rm -f "$local_file"
+}
+
+
+edit_remote_file() {
+    local remote_path="$1"
+    shift
+    local editor_args=("$@")
+
+    # Resolve full remote path
+    if [[ "$remote_path" != /* ]]; then
+        remote_path="$current_dir/$remote_path"
+    fi
+
+    # Create a temp file for local editing
+    local local_file
+    local_file="$(mktemp $PANSSH_TEMP_DIR/panssh-edit.XXXXXX)"
+
+    # Download file from remote if it exists
+    if ssh_exec "[ -f \"$remote_path\" ]"; then
+        if ! ssh_exec "[ -r \"$remote_path\" ]"; then
+            echo "🚫 File is not readable."
+            return 1
+        fi
+
+        if ! ssh_exec "[ -w \"$remote_path\" ]"; then
+            echo "🚫 File is not writable."
+            return 1
+        else
+            transfer_file "$USER@$HOST:$remote_path" "$local_file"
+        fi
+    else
+        local dirname=$(dirname "$remote_path")
+        if ! ssh_exec "[ -w \"$dirname\" ]"; then
+            echo "🚫 Directory is not writable."
+            return 1
+        fi 
+    fi
+
+    # Get initial checksum
+    local sum_before
+    sum_before=$(shasum "$local_file" | awk '{print $1}')
+
+    # Run editor
+    if launch_editor "$local_file" "${editor_args[@]}"; then
+        # Get new checksum.
+        local sum_after
+        sum_after=$(shasum "$local_file" | awk '{print $1}')
+
+        if [[ "$sum_after" == "$sum_before" ]]; then
+            echo "🟡 File has not changed."
+        else
+            transfer_file "$local_file" "$USER@$HOST:$remote_path"
+        fi
+    fi
+
+    rm -f "$local_file"
+}
+
+# -------- Interactive operation --------
+
+# First, check that we can connect successfully.
+ssh_exec "exit" || exit $?
+echo -e "\nConnected to $SITE_NAME.$ENV_ID\n"
+
+auto_ls=0
+current_status=0
+current_dir="/code"
+ssh_exec "cd $current_dir"
+
+interrupted=0
+trap 'interrupted=1' SIGINT
+bind '"\t":' 2>/dev/null
+
+# --- Main loop ---
+while true; do
+    interrupted=0
+    read -e -p "$SITE_NAME.$ENV_ID:$current_dir> " cmd
+
+    [[ "$interrupted" -eq 1 ]] && continue
+    [[ -z "$cmd" ]] && continue
+
+    history -s "$cmd"
+
+    # Handle `exit`.
+    [[ "$cmd" == "exit" ]] && break
+
+    # Handle `.ed` (edit) and `.vw` (view)
+    if [[ "$cmd" =~ ^\.(ed|vw)[[:space:]]+([^[:space:]]+)(.*)$ ]]; then
+        action="${BASH_REMATCH[1]}"
+        file_path="${BASH_REMATCH[2]}"
+        read -ra editor_args <<< "${BASH_REMATCH[3]}"
+        if [[ "$action" == "ed" ]]; then
+            edit_remote_file "$file_path" "${editor_args[@]}"
+        else
+            view_remote_file "$file_path" "${editor_args[@]}"
+        fi
+        continue
+    fi
+
+    # Handle toggling of auto-ls feature.
+    if [[ "$cmd" == ".ls" ]]; then
+        if [[ "$auto_ls" -eq 0 ]]; then
+            echo "✅ Auto-ls enabled"
+            auto_ls=1
+        else
+            echo "🚫 Auto-ls disabled"
+            auto_ls=0
+        fi
+        continue
+    fi
+
+    # Run the command in the correct directory
+    current_dir_before="$current_dir"
+    ssh_exec_track "cd \"$current_dir\" && $cmd"
+    current_status=$?
+
+    # Automatic directory listing if enabled and directory was changed.
+    if [[ "$auto_ls" -eq 1 ]] \
+    && [[ "$current_dir" != "$current_dir_before" ]]; then
+        ssh_exec "cd \"$current_dir\" && ls -pC --group-directories-first"
+    fi
+
+done
+
+exit $current_status
