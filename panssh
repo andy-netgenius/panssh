@@ -80,7 +80,7 @@ ssh_exec() {
     return $?
 }
 
-# --- SSH wrapper with current directory tracking---
+# --- SSH wrapper with current directory tracking ---
 ssh_exec_track() {
     local cmd="$1"
     local marker="___PANSSH_CWD___"
@@ -101,8 +101,6 @@ ssh_exec_track() {
 
     return "$status"
 }
-
-
 
 # --- SSH connection close ---
 cleanup_ssh() {
@@ -178,7 +176,6 @@ view_remote_file() {
     launch_editor "$local_file" "${editor_args[@]}"
     rm -f "$local_file"
 }
-
 
 edit_remote_file() {
     local remote_path="$1"
