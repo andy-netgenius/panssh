@@ -49,7 +49,7 @@ echo "commands" | panssh site.env
 
 - A Pantheon user account with SSH access configured.
 - SSH client with a key pair registered in your Pantheon account.
-- Bash 4+. MacOS users: install bash 4+ and edit the first line of the panssh script to point to the correct bash executable.
+- Bash 3.2+
 - For local file viewing / editing:
   - A terminal-based editor (e.g., `nano`, `vim`) or a configured `$EDITOR` variable.
   - Standard `scp` and `shasum` utilities.
