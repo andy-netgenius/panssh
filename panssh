@@ -65,6 +65,11 @@ fi
 readonly USER="$ENV_ID.$SITE_ID"
 readonly HOST="appserver.$ENV_ID.$SITE_ID.drush.in"
 
+readonly LOCAL_HOST=$(hostname -s)
+readonly LOCAL_USER=$(whoami)
+readonly REMOTE_HOME="/tmp/panssh-home.$LOCAL_USER.$LOCAL_HOST"
+readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME\/cache\""
+
 # --- SSH wrapper ---
 ssh_exec() {
     local cmd=$(printf '%q' "$1")
@@ -94,15 +99,16 @@ ssh_exec_track() {
     return "$status"
 }
 
-# --- SSH connection close ---
-cleanup_ssh() {
+# --- Clean up and close SSH connection ---
+cleanup() {
     local status=$?
+    ssh_exec "rm -rf \"$REMOTE_HOME\""
     ssh -O exit $SSH_OPTIONS "$USER@$HOST" 2>/dev/null
     exit $status
 }
-trap cleanup_ssh EXIT
+trap cleanup EXIT
 
-# --- Handle commands from command-line or stdin ---
+# --- Execute commands from command-line or stdin ---
 if [[ $# -gt 1 ]] || ! [ -t 0 ]; then
     if [[ $# -gt 1 ]]; then
         shift
@@ -110,7 +116,7 @@ if [[ $# -gt 1 ]] || ! [ -t 0 ]; then
     else
         cmd=$(cat)
     fi
-    ssh_exec "$cmd"
+    ssh_exec "export $REMOTE_ENV; $cmd"
     exit $?
 fi
 
@@ -234,16 +240,10 @@ current_dir="/code"
 # Basic environment checks.
 if ssh_exec "cd $current_dir"; then
     if ssh_exec "[ -w $current_dir ]"; then
-        echo "🟡 $current_dir directory is writable."
-        echo -e "You may want to switch to Git mode before continuing.\n"
+        echo -e "🟡 $current_dir directory is writable.\n"
     else
-        echo "🚫 $current_dir directory is read-only."
-        echo -e "You may want to switch to SFTP mode before continuing.\n"
+        echo -e "🚫 $current_dir directory is read-only.\n"
     fi
-fi
-
-if ! PANSSH_HOME=$(ssh_exec "mktemp -d /tmp/panssh-home.XXXXXX"); then
-    echo "❌ Failed create to remote HOME directory."
 fi
 
 interrupted=0
@@ -274,7 +274,7 @@ while true; do
 
     # Handle toggling of auto-ls feature.
     if [[ "$cmd" == ".ls" ]]; then
-        if [[ "$auto_ls" -eq 0 ]]; then
+        if (( auto_ls == 0 )); then
             echo "✅ Auto-ls enabled"
             auto_ls=1
         else
@@ -286,7 +286,7 @@ while true; do
 
     # Run the command in the correct directory
     current_dir_before="$current_dir"
-    ssh_exec_track "export HOME=\"$PANSSH_HOME\"; cd \"$current_dir\" && $cmd"
+    ssh_exec_track "export $REMOTE_ENV; cd \"$current_dir\" && $cmd"
     current_status=$?
 
     # Automatic directory listing if enabled and directory was changed.
