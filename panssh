@@ -13,12 +13,19 @@
 # License: MIT
 ###############################################################################
 
+readonly PANSSH_VERSION="panssh 1.2.0"
+
 # --- Configuration ---
 readonly SSH_PORT="2222"
 
 readonly SITES_FILE="$HOME/.panssh.sites"
 readonly PANSSH_TEMP_DIR="/tmp/panssh-$USER"
 mkdir -p -m 700 "$PANSSH_TEMP_DIR"
+
+readonly LOCAL_HOST=$(hostname -s)
+readonly LOCAL_USER=$(whoami)
+readonly REMOTE_HOME="/tmp/panssh-home.$LOCAL_USER.$LOCAL_HOST"
+readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME\/cache\""
 
 readonly SSH_GENERAL_OPTIONS=" \
   -o ControlMaster=auto \
@@ -38,13 +45,14 @@ if [[ ! -f "$SITES_FILE" ]]; then
     exit 1
 fi
 
-# --- Parse site.env argument ---
+# --- Parse command-line, get site.env argument ---
 if [[ ! "$1" =~ ^([a-zA-Z0-9\-]+)\.([a-zA-Z0-9\-]+)$ ]]; then
+    echo -e "\n$PANSSH_VERSION"
     echo -e "\nUsage examples:\n"
     echo -e "  panssh site.env"
     echo -e "  panssh site.env \"commands\""
     echo -e "  panssh site.env < script.sh"
-    echo -e "  echo \"commands\" | site.env"
+    echo -e "  echo \"commands\" | panssh site.env"
     echo -e "\nSpecial commands:\n"
     echo -e "  View a file: .vw <filepath>"
     echo -e "  Edit a file: .ed <filepath>"
@@ -64,11 +72,6 @@ fi
 
 readonly USER="$ENV_ID.$SITE_ID"
 readonly HOST="appserver.$ENV_ID.$SITE_ID.drush.in"
-
-readonly LOCAL_HOST=$(hostname -s)
-readonly LOCAL_USER=$(whoami)
-readonly REMOTE_HOME="/tmp/panssh-home.$LOCAL_USER.$LOCAL_HOST"
-readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME\/cache\""
 
 # --- SSH wrapper ---
 ssh_exec() {
@@ -102,7 +105,6 @@ ssh_exec_track() {
 # --- Clean up and close SSH connection ---
 cleanup() {
     local status=$?
-    ssh_exec "rm -rf \"$REMOTE_HOME\""
     ssh -O exit $SSH_OPTIONS "$USER@$HOST" 2>/dev/null
     exit $status
 }
@@ -151,10 +153,8 @@ edit_file() {
     shift 2
     local editor_args=("$@")
 
-    # Resolve full remote path
-    if [[ "$remote_path" != /* ]]; then
-        remote_path="$current_dir/$remote_path"
-    fi
+    # Resolve remote path.
+    remote_path=$(ssh_exec "export $REMOTE_ENV; cd \"$current_dir\" && eval realpath \"$remote_path\"")
 
     local can_edit=0
     local download_needed=0
@@ -192,10 +192,7 @@ edit_file() {
     local filename=$(basename "$remote_path")
     local local_file
 
-    if ! local_file="$(mktemp $PANSSH_TEMP_DIR/$filename.XXXXXX)"; then
-        echo "❌ Failed to create local temporary file."
-        return 1
-    fi
+    local_file="$PANSSH_TEMP_DIR/$SITE_NAME.$ENV_ID--$filename)";
 
     # Download the file, if needed.
     if (( download_needed == 1 )); then
@@ -204,17 +201,17 @@ edit_file() {
             rm -f "$local_file"
             return 1
         fi
+        # Get checksum before editing.
+        local sum_before=$(shasum "$local_file" | awk '{print $1}')
     fi
-
-    # Get checksum before editing.
-    local sum_before=$(shasum "$local_file" | awk '{print $1}')
 
     # Run editor
     if launch_editor "$local_file" "${editor_args[@]}"; then
-        if [[ "$action" == "ed" ]]; then
-            # Check whether file has changed: get new checksum.
+        # In edit mode, was a file either downloaded or created?
+        if [[ "$action" == "ed" ]] && [[ -f $local_file ]]; then
+            # Get new checksum.
             local sum_after=$(shasum "$local_file" | awk '{print $1}')
-            # If changed, upload the file
+            # If the file has changed, upload it to remote.
             if [[ "$sum_after" != "$sum_before" ]]; then
                 transfer_file "$local_file" "$USER@$HOST:$remote_path"
             else
@@ -231,18 +228,21 @@ edit_file() {
 
 # First, check that we can connect successfully.
 ssh_exec "exit" || exit $?
-echo -e "\nConnected to $SITE_NAME.$ENV_ID\n"
+echo -e "\n$PANSSH_VERSION: Connected to $SITE_NAME.$ENV_ID\n"
 
 auto_ls=0
 current_status=0
 current_dir="/code"
 
+# Create our remote home directory if it doesn't exist.
+ssh_exec "mkdir -p \"$REMOTE_HOME\""
+
 # Basic environment checks.
 if ssh_exec "cd $current_dir"; then
     if ssh_exec "[ -w $current_dir ]"; then
-        echo -e "🟡 $current_dir directory is writable.\n"
+        echo -e "🟡 $current_dir directory is writable (SFTP mode).\n"
     else
-        echo -e "🚫 $current_dir directory is read-only.\n"
+        echo -e "🚫 $current_dir directory is read-only (Git mode).\n"
     fi
 fi
 
