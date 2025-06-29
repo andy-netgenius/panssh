@@ -25,7 +25,7 @@ mkdir -p -m 700 "$PANSSH_TEMP_DIR"
 readonly LOCAL_HOST=$(hostname -s)
 readonly LOCAL_USER=$(whoami)
 readonly REMOTE_HOME="/tmp/panssh-home.$LOCAL_USER.$LOCAL_HOST"
-readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME\/cache\""
+readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME/.cache\""
 
 readonly SSH_GENERAL_OPTIONS=" \
   -o ControlMaster=auto \
