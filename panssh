@@ -173,7 +173,7 @@ edit_file() {
             can_edit=1  
             download_needed=1
         fi
-    else
+    elif [[ "$action" == "ed" ]]; then
         # No existing file - check we can create it.
         local dirname=$(dirname "$remote_path")
         if ! ssh_exec "[ -d \"$dirname\" ]"; then
@@ -183,6 +183,8 @@ edit_file() {
         else
             can_edit=1  
         fi
+    else
+        echo "🚫 File not found."
     fi
 
     # Return now if we can't edit the requested file.
