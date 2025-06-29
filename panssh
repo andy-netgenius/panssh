@@ -128,7 +128,7 @@ transfer_file() {
     return $?
 }
 
-# --- Remote edit command handler ---
+# --- Launch local text editor ---
 launch_editor() {
     local file="$1"
     shift
