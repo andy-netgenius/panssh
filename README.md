@@ -101,7 +101,7 @@ This file maps Pantheon site names to internal site IDs used for SSH routing.
 
 - No support for interactive input (`more`, `rm -i`, `drush` confirmation prompts, etc). Some such programs will act as if ENTER was pressed and use a default value. Others will simply not work.
 - Some behaviours will differ compared with a real interactive SSH session.
-- No tab completion for remote filenames or commands.
+- No tab completion for remote filenames or commands yet. It's underdevelopment and will be available in a new release very soon.
 - Relies on discoverable but publicly undocumented features of Pantheon's SSH service, and their user and host naming conventions.
 
 ---
