@@ -6,8 +6,6 @@
 # Emulates an interactive ssh connection to a Pantheon site's application
 # environment.
 #
-# Version: 1.0.0
-# 
 # Author: Andy Inman - andy@lastcallmedia.com
 # Copyright (c) 2025 Last Call Media
 # License: MIT
@@ -19,8 +17,9 @@ readonly PANSSH_VERSION="panssh 1.2.0"
 readonly SSH_PORT="2222"
 
 readonly SITES_FILE="$HOME/.panssh.sites"
-readonly PANSSH_TEMP_DIR="/tmp/panssh-$USER"
-mkdir -p -m 700 "$PANSSH_TEMP_DIR"
+readonly STORAGE_DIR="$HOME/.panssh"
+readonly TEMP_DIR="/tmp/panssh/$USER"
+mkdir -p -m 700 "$STORAGE_DIR" "$TEMP_DIR"
 
 readonly LOCAL_HOST=$(hostname -s)
 readonly LOCAL_USER=$(whoami)
@@ -29,12 +28,15 @@ readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME/.cache\
 
 readonly SSH_GENERAL_OPTIONS=" \
   -o ControlMaster=auto \
-  -o ControlPath=$PANSSH_TEMP_DIR/cm-%C \
+  -o ControlPath=$TEMP_DIR/cm-%C \
   -o ControlPersist=5m \
   -o StrictHostKeyChecking=no \
   -o ConnectTimeout=30"
 readonly SSH_OPTIONS="-p $SSH_PORT $SSH_GENERAL_OPTIONS"
 readonly SCP_OPTIONS="-q -P $SSH_PORT $SSH_GENERAL_OPTIONS"
+
+# Location of this script.
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Load SITE_IDs from config ---
 if [[ ! -f "$SITES_FILE" ]]; then
@@ -105,7 +107,10 @@ ssh_exec_track() {
 # --- Clean up and close SSH connection ---
 cleanup() {
     local status=$?
+    history -a
     ssh -O exit $SSH_OPTIONS "$USER@$HOST" 2>/dev/null
+    echo
+    echo "Connection to $SITE_NAME.$ENV_ID closed." >&2
     exit $status
 }
 trap cleanup EXIT
@@ -194,7 +199,7 @@ edit_file() {
     local filename=$(basename "$remote_path")
     local local_file
 
-    local_file="$PANSSH_TEMP_DIR/$SITE_NAME.$ENV_ID--$filename)";
+    local_file="$TEMP_DIR/$SITE_NAME.$ENV_ID--$filename)";
 
     # Download the file, if needed.
     if (( download_needed == 1 )); then
@@ -250,17 +255,52 @@ fi
 
 interrupted=0
 trap 'interrupted=1' SIGINT
-bind '"\t":' 2>/dev/null
+
+# Find our readx script.
+if [[ -f "$SCRIPT_DIR/readx.source.sh" ]]; then
+    READX_PATH="$SCRIPT_DIR/readx.source.sh"
+elif [[ -f "$SCRIPT_DIR/../lib/panssh/readx.source.sh" ]]; then
+    READX_PATH="$SCRIPT_DIR/../lib/panssh/readx.source.sh"
+else
+    echo "🚫 Failed to include readx.source.sh. Tab-completion will not be available."
+fi
+
+# Get local colour settings.
+CLR0=$(tput sgr0 2>/dev/null) \
+&& CLR1=$(tput setaf 1 2>/dev/null) \
+&& CLR2=$(tput setaf 3 2>/dev/null) \
+&& CLR3=$(tput setaf 6 2>/dev/null)
+
+# Set up command history behaviour.
+export HISTFILE="$STORAGE_DIR/$SITE_NAME.$ENV_ID.history"
+export HISTCONTROL=ignoredups:erasedups
+history -r
 
 # --- Main loop ---
 while true; do
     interrupted=0
-    read -e -p "$SITE_NAME.$ENV_ID:$current_dir> " cmd
+    prompt=$( printf "${CLR1}%s${CLR0}.${CLR2}%s${CLR0}:${CLR3}%s${CLR0}%s" \
+        "${CLR1}${SITE_NAME}" \
+        "${CLR2}${ENV_ID}" \
+        "${CLR3}${current_dir}" \
+        "\$ " ) 
 
-    [[ "$interrupted" -eq 1 ]] && continue
+    if [[ -n "$READX_PATH" ]]; then
+        export READX_PROMPT="$(printf "%s" "$prompt" | sed -E 's/(\x1b\[[0-9;]*m)/\\[\1\\]/g')"
+        export SSH_OPTIONS USER HOST REMOTE_ENV CWD="$current_dir"
+        
+        #cmd=$(bash --init-file readx.source.sh | tail -n1)
+        cmd=$(bash --init-file readx.source.sh)
+
+        # Re-display the prompt and command to look like standard bash.
+        printf "%s%s\n" "$(eval "echo \"$prompt\"")" "$cmd"
+    else
+        read -e -r -p "$prompt" cmd
+        [[ -n "$cmd" ]] && history -s "$cmd"
+    fi
+
     [[ -z "$cmd" ]] && continue
-
-    history -s "$cmd"
+    (( $interrupted ==1 )) && continue
 
     # Handle `exit`.
     [[ "$cmd" == "exit" ]] && break
