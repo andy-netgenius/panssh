@@ -253,15 +253,13 @@ if ssh_exec "cd $current_dir"; then
     fi
 fi
 
-interrupted=0
-trap 'interrupted=1' SIGINT
-
 # Find our readx script.
-if [[ -f "$SCRIPT_DIR/readx.source.sh" ]]; then
-    READX_PATH="$SCRIPT_DIR/readx.source.sh"
-elif [[ -f "$SCRIPT_DIR/../lib/panssh/readx.source.sh" ]]; then
+READX_PATH="$SCRIPT_DIR/readx.source.sh"
+if [[ ! -f "$READX_PATH" ]]; then
     READX_PATH="$SCRIPT_DIR/../lib/panssh/readx.source.sh"
-else
+fi
+
+if [[ ! -f "$READX_PATH" ]]; then
     echo "🚫 Failed to include readx.source.sh. Tab-completion will not be available."
 fi
 
@@ -277,31 +275,31 @@ export HISTCONTROL=ignoredups:erasedups
 history -r
 
 # --- Main loop ---
+trap '' SIGINT
 while true; do
-    interrupted=0
     prompt=$( printf "${CLR1}%s${CLR0}.${CLR2}%s${CLR0}:${CLR3}%s${CLR0}%s" \
         "${CLR1}${SITE_NAME}" \
         "${CLR2}${ENV_ID}" \
         "${CLR3}${current_dir}" \
         "\$ " ) 
 
-    if [[ -n "$READX_PATH" ]]; then
+    if [[ -f "$READX_PATH" ]]; then
         export READX_PROMPT="$(printf "%s" "$prompt" | sed -E 's/(\x1b\[[0-9;]*m)/\\[\1\\]/g')"
         export SSH_OPTIONS USER HOST REMOTE_ENV CWD="$current_dir"
         
-        #cmd=$(bash --init-file readx.source.sh | tail -n1)
-        cmd=$(bash --init-file readx.source.sh)
+        cmd=$(bash --init-file "$READX_PATH")
+        #cmd=$(bash --init-file READX_PATH | tail -n1)
 
         # Re-display the prompt and command to look like standard bash.
         printf "%s%s\n" "$(eval "echo \"$prompt\"")" "$cmd"
     else
+        bind '"\t":' 2>/dev/null
         read -e -r -p "$prompt" cmd
         [[ -n "$cmd" ]] && history -s "$cmd"
     fi
 
+    # Handle empty input.
     [[ -z "$cmd" ]] && continue
-    (( $interrupted ==1 )) && continue
-
     # Handle `exit`.
     [[ "$cmd" == "exit" ]] && break
 

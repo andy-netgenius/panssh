@@ -1,21 +1,15 @@
 # bash completion script for panssh
 
 # Linux locations:
+#   $HOME/.local/share/bash-completion/completions
 #   /usr/share/bash-completion/completions/panssh
 #   /etc/bash_completion.d/panssh
 #   /usr/local/etc/bash_completion.d/panssh
 #   /usr/local/share/bash-completion/completions/panssh
+
 # MacOS locations:
 #   /usr/share/bash-completion/completions/panssh
 #   /opt/homebrew/etc/bash_completion.d/panssh
-
-# Bash completion for panssh
-
-# Bash completion for panssh
-
-# Bash completion for panssh
-
-# Bash completion for panssh
 
 _panssh_completions() {
   local cur="${COMP_WORDS[COMP_CWORD]}"

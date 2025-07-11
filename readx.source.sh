@@ -7,6 +7,7 @@
   exit 1
 }
 
+# Override a completion.
 _readx_override_completion() {
   local args=("$@")
   local len=${#args[@]}
@@ -20,15 +21,15 @@ _readx_override_completion() {
   # We handle only -F type for given commands.
   ( [[ "$type" != "-F" ]] || [[ "$command" == "''" ]] ) && return
 
-  # echo ">$complete -o default $type _readx_complete $command " >&2
-  $complete -o nospace -o default $type _readx_complete $command 
+  # Use our complete function instead.
+  # Note adding -o bashdefault may help?
+  $complete -o bashdefault -o nospace -o default $type _readx_complete $command 
 
   # Try this if above isn't working.
-  #echo ">complete -o bashdefault -o default $type _readx_complete $command" >&2
   #complete -o bashdefault -o default $type _readx_complete "$command"
 }
 
-# Read existing completions and override them.
+# Loop through existing completions and override them.
 _readx_override_completions() {
   local line
   while IFS= read -r line; do
@@ -36,52 +37,17 @@ _readx_override_completions() {
   done < <(complete -p)
 }
 
+# File and directory name completion.
 _readx_complete() {
-  #echo -e "\n--- Intercepted completion ---" >&2 
-  #echo "Words: ${words[0]} ${words[1]} ${words[2]} ${words[3]}  cword: $cword" >&2
- 
-  local cur="${COMP_WORDS[COMP_CWORD]}"
-
-  # Get and return matches.
-  #local results=$(compgen -f -- "$cur")
-  #local results=$(_readx_exec "compgen -f -- '$cur'")
-
-  # local results=$(_readx_exec "compgen -f -- $cur")
-  # local results=$(_readx_compgen "$cur")
-
-  # Using ls -dp1 instead of compgen allows directoires to complete correctly.
-  local results=$(_readx_exec "ls -dp1 ${COMP_WORDS[COMP_CWORD]}*")
-  
+  # We use ls -AdLp1 instead of compgen - easier to detect directory vs file.
+  local partial="${COMP_WORDS[COMP_CWORD]}"
+  local results=$(_readx_exec "ls -AdLp1 \"$partial\"* 2>/dev/null")
   COMPREPLY=( $(printf "%s\n" $results) )
-  
-}
-
-_readx_compgen() {
-  local cur="$1"
-  for match in $(_readx_exec "compgen -f -- $cur"); do
-    if _readx_exec "test -d '$match'"; then
-      echo "${match}/"
-    else
-      echo "${match} "
-    fi
-  done
 }
 
 # Run the given command remotely and echo the output.
 _readx_exec() {
-  # Mock remote simply using local.
-  #eval "$1"
-  #echo $(eval $1);
-  # "$1"
   _readx_ssh_exec "export $REMOTE_ENV && cd $CWD && $1"
-}
-
-_readx_capture_enter() {
-  local status="$?"
-  [[ -n "$READLINE_LINE" ]] && history -s "$READLINE_LINE"
-
-  echo "$READLINE_LINE"
-  exit $status 2>/dev/null
 }
 
 # --- SSH wrapper ---
@@ -89,6 +55,20 @@ _readx_ssh_exec() {
     local cmd=$(printf '%q' "$1")
     ssh $SSH_OPTIONS "$USER@$HOST" "echo $cmd | bash; exit \${PIPESTATUS[1]}"
     return $?
+}
+
+_readx_capture_enter() {
+  local status="$?"
+
+  # Remove leading and trailing whitespace from the input line.
+  trimmed="${READLINE_LINE#"${READLINE_LINE%%[![:space:]]*}"}"
+  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+
+  # Add to history.
+  [[ -n "$trimmed" ]] && history -s "$trimmed"
+
+  echo "$READLINE_LINE"
+  exit $status 2>/dev/null
 }
 
 # Ensure standard completions.
@@ -102,6 +82,3 @@ bind -x '"\r": _readx_capture_enter' 2>/dev/null
 
 # Set prompt provided by the parent script.
 [[ -n "$READX_PROMPT" ]] && PS1="$READX_PROMPT"
-
-#echo "SSH: $SSH_OPTIONS $USER $HOST" >&2
-#_readx_ssh_exec "cd $CWD; pwd && ls" >&2
