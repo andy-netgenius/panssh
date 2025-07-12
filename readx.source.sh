@@ -23,10 +23,7 @@ _readx_override_completion() {
 
   # Use our complete function instead.
   # Note adding -o bashdefault may help?
-  $complete -o bashdefault -o nospace -o default $type _readx_complete $command 
-
-  # Try this if above isn't working.
-  #complete -o bashdefault -o default $type _readx_complete "$command"
+  $complete -o filenames -o nospace -o default $type _readx_complete $command 
 }
 
 # Loop through existing completions and override them.
@@ -39,10 +36,20 @@ _readx_override_completions() {
 
 # File and directory name completion.
 _readx_complete() {
-  # We use ls -AdLp1 instead of compgen - easier to detect directory vs file.
-  local partial="${COMP_WORDS[COMP_CWORD]}"
-  local results=$(_readx_exec "ls -AdLp1 \"$partial\"* 2>/dev/null")
-  COMPREPLY=( $(printf "%s\n" $results) )
+  local partial results
+  partial="${COMP_WORDS[COMP_CWORD]}"
+
+  if [[ "$partial" == "$_READX_PARTIAL_LAST" ]]; then
+    # If the partial matches the last completion, reuse cached results
+    COMPREPLY=( "${_READX_RESULTS_LAST[@]}" )
+  else
+    # Use ls -AdLpv1 to list completions (dirs have trailing slashes)
+    results=$(_readx_exec "ls -AdLpv1 \"$partial\"* 2>/dev/null")
+    COMPREPLY=( $(printf "%s\n" "$results") )
+
+    _READX_PARTIAL_LAST="$partial"
+    _READX_RESULTS_LAST=( "${COMPREPLY[@]}" )
+  fi
 }
 
 # Run the given command remotely and echo the output.
