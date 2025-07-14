@@ -18,12 +18,12 @@ _readx_override_completion() {
   local function="${args[$((len - 2))]}"
   local command="${args[$((len - 1))]}"
 
-  # We handle only -F type for given commands.
-  ( [[ "$type" != "-F" ]] || [[ "$command" == "''" ]] ) && return
+  # We handle only -F type.
+  [[ "$type" != "-F" ]] && return
 
   # Use our complete function instead.
   # Note adding -o bashdefault may help?
-  $complete -o filenames -o nospace -o default $type _readx_complete $command 
+  $complete -o filenames -o nospace -o bashdefault -o default $type _readx_complete $command
 }
 
 # Loop through existing completions and override them.
@@ -37,7 +37,8 @@ _readx_override_completions() {
 # File and directory name completion.
 _readx_complete() {
   local partial results
-  partial="${COMP_WORDS[COMP_CWORD]}"
+
+  (( COMP_CWORD > 0 )) && partial="${COMP_WORDS[COMP_CWORD]}"
 
   if [[ "$partial" == "$_READX_PARTIAL_LAST" ]]; then
     # If the partial matches the last completion, reuse cached results
@@ -52,15 +53,11 @@ _readx_complete() {
   fi
 }
 
-# Run the given command remotely and echo the output.
+# Run the given command on the remote host.
+# READX_EXEC, REMOTE_ENV and CWD should be set by the parent script.
 _readx_exec() {
-  _readx_ssh_exec "export $REMOTE_ENV && cd $CWD && $1"
-}
-
-# --- SSH wrapper ---
-_readx_ssh_exec() {
-    local cmd=$(printf '%q' "$1")
-    ssh $SSH_OPTIONS "$USER@$HOST" "echo $cmd | bash; exit \${PIPESTATUS[1]}"
+    local cmd=$(printf '%q' "export $REMOTE_ENV && cd $CWD && $1")
+    eval "$( printf "$READX_EXEC" "$cmd" )"
     return $?
 }
 
@@ -88,4 +85,4 @@ _readx_override_completions
 bind -x '"\r": _readx_capture_enter' 2>/dev/null
 
 # Set prompt provided by the parent script.
-[[ -n "$READX_PROMPT" ]] && PS1="$READX_PROMPT"
+[[ -n "$READX_PROMPT" ]] && PS1="$READX_PROMPT" || PS1="\$ "
