@@ -236,21 +236,20 @@ edit_file() {
 ssh_exec "exit" || exit $?
 echo -e "\n$PANSSH_VERSION: Connected to $SITE_NAME.$ENV_ID\n"
 
-# Find our readx script.
-READX_PATH="$SCRIPT_DIR/readx.source.sh"
-if [[ ! -f "$READX_PATH" ]]; then
-    READX_PATH="$SCRIPT_DIR/../lib/panssh/readx.source.sh"
-fi
+# Check for Bash version 4+.
+if ! ( [[ $BASH_VERSION =~ ^([0-9]+)\. ]] && (( ${BASH_REMATCH[1]} >= 4 )) ) then
+    echo -e "ℹ️  Tab-completion in PanSSH requires Bash 4+\n"
+else
+    # Find our readx script.
+    READX_PATH="$SCRIPT_DIR/readx.source.sh"
+    if [[ ! -f "$READX_PATH" ]]; then
+        READX_PATH="$SCRIPT_DIR/../lib/panssh/readx.source.sh"
+    fi
 
-if [[ -f "$READX_PATH" ]]; then
-    # Check for Bash version >= 4.
-    if ! ( [[ $BASH_VERSION =~ ^([0-9]+)\. ]] && (( ${BASH_REMATCH[1]} >= 4 )) ) then
-        echo -e "ℹ️  Tab-completion in PanSSH requires Bash 4+\n"
+    if [[ ! -f "$READX_PATH" ]]; then
+        echo -e "❌ Failed to find readx.source.sh. Tab-completion will not be available.\n"
         unset READX_PATH
     fi
-else
-    echo -e "❌ Failed to find readx.source.sh. Tab-completion will not be available.\n"
-    unset READX_PATH
 fi
 
 if [[ -n "$READX_PATH" ]]; then
