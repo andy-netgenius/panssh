@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ###############################################################################
-# panssh - Pantheon interactive SSH session emulator
+# PanSSH - Pantheon interactive SSH session emulator
 #
 # Emulates an interactive ssh connection to a Pantheon site's application
 # environment.
@@ -11,7 +11,7 @@
 # License: MIT
 ###############################################################################
 
-readonly PANSSH_VERSION="panssh 1.2.0"
+readonly PANSSH_VERSION="PanSSH 1.2.0"
 
 # --- Configuration ---
 readonly SSH_PORT="2222"
@@ -236,74 +236,87 @@ edit_file() {
 ssh_exec "exit" || exit $?
 echo -e "\n$PANSSH_VERSION: Connected to $SITE_NAME.$ENV_ID\n"
 
-auto_ls=0
-current_status=0
-current_dir="/code"
-
-# Create our remote home directory if it doesn't exist.
-ssh_exec "mkdir -p \"$REMOTE_HOME\""
-
-# Basic environment checks.
-if ssh_exec "cd $current_dir"; then
-    if ssh_exec "[ -w $current_dir ]"; then
-        echo -e "🟡 $current_dir directory is writable (SFTP mode).\n"
-    else
-        echo -e "🚫 $current_dir directory is read-only (Git mode).\n"
-    fi
-fi
-
 # Find our readx script.
 READX_PATH="$SCRIPT_DIR/readx.source.sh"
 if [[ ! -f "$READX_PATH" ]]; then
     READX_PATH="$SCRIPT_DIR/../lib/panssh/readx.source.sh"
 fi
 
-if [[ ! -f "$READX_PATH" ]]; then
-    echo "🚫 Failed to include readx.source.sh. Tab-completion will not be available."
+if [[ -f "$READX_PATH" ]]; then
+    # Check for Bash version >= 4.
+    if ! ( [[ $BASH_VERSION =~ ^([0-9]+)\. ]] && (( ${BASH_REMATCH[1]} >= 4 )) ) then
+        echo -e "ℹ️  Tab-completion in PanSSH requires Bash 4+\n"
+        unset READX_PATH
+    fi
+else
+    echo -e "❌ Failed to find readx.source.sh. Tab-completion will not be available.\n"
+    unset READX_PATH
 fi
 
-# Get local colour settings.
-CLR0=$(tput sgr0 2>/dev/null) \
-&& CLR1=$(tput setaf 1 2>/dev/null) \
-&& CLR2=$(tput setaf 3 2>/dev/null) \
-&& CLR3=$(tput setaf 6 2>/dev/null)
+if [[ -n "$READX_PATH" ]]; then
+    # Get local colour settings.
+    CLR0=$(tput sgr0 2>/dev/null) \
+    && CLR1=$(tput setaf 1 2>/dev/null) \
+    && CLR2=$(tput setaf 3 2>/dev/null) \
+    && CLR3=$(tput setaf 6 2>/dev/null)
 
-# Prompt used with bash command-line input.
-PROMPT_PS1=$( printf \
-    "\[${CLR1}\]%s\[${CLR0}\].\[${CLR2}\]%s\[${CLR0}\]:\[${CLR3}\]%s\[${CLR0}\]\$ " \
-    "$SITE_NAME" "$ENV_ID" "%s"
-)
+    # Prompt used with `echo`.
+    PROMPT=$( printf "${CLR1}%s${CLR0}.${CLR2}%s${CLR0}:${CLR3}%s${CLR0}\$ " \
+        "$SITE_NAME" "$ENV_ID" "_CWD_"
+    )
 
-# Prompt used with `read` or `echo`.
-PROMPT=$( printf "${CLR1}%s${CLR0}.${CLR2}%s${CLR0}:${CLR3}%s${CLR0}\$ " \
-    "$SITE_NAME" "$ENV_ID" "%s"
-)
+    # Prompt used with readx (bash command line input).
+    PROMPT_PS1=$( printf \
+        "\[${CLR1}\]%s\[${CLR0}\].\[${CLR2}\]%s\[${CLR0}\]:\[${CLR3}\]%s\[${CLR0}\]\$ " \
+        "$SITE_NAME" "$ENV_ID" "_CWD_"
+    )
+else
+    # Prompt used with `read` (colour is not)
+    PROMPT=$( printf "%s.%s:%s\$ " \
+        "$SITE_NAME" "$ENV_ID" "_CWD_"
+    )
+fi
 
 # Set up command history behaviour.
 export HISTFILE="$STORAGE_DIR/$SITE_NAME.$ENV_ID.history"
-export HISTCONTROL=ignoredups:erasedups
+export HISTCONTROL=ignorespace:ignoredups:erasedups
 history -r
+
+# Set up initial state.
+auto_ls=0
+current_status=0
+current_dir="/code"
+
+# Basic environment checks.
+if ssh_exec "cd $current_dir"; then
+    if ssh_exec "[ -w $current_dir ]"; then
+        echo -e "🟡 $current_dir directory is writable (SFTP mode)\n"
+    else
+        echo -e "🚫 $current_dir directory is read-only (Git mode)\n"
+    fi
+fi
+
+# Create our remote home directory if it doesn't exist.
+ssh_exec "mkdir -p \"$REMOTE_HOME\""
 
 # --- Main loop ---
 trap 'interrupted=1' SIGINT
 while true; do
     # If readx was found, use it for command input.
-    if [[ -f "$READX_PATH" ]]; then
-        export READX_PROMPT="$(printf "$PROMPT_PS1" "$current_dir")"
-        export REMOTE_ENV CWD="$current_dir"
+    if [[ -n "$READX_PATH" ]]; then
         export READX_EXEC="ssh $SSH_OPTIONS $USER@$HOST 'echo %s | bash'"
+        export REMOTE_ENV CWD="$current_dir"
+        export READX_PROMPT="${PROMPT_PS1/_CWD_/$current_dir}"
 
         # Use bash interactive to read command input with completion.
         cmd=$(bash --init-file "$READX_PATH")
-
         # Re-display the prompt and input, to match bash interactive.
-        echo "$(printf "$PROMPT" "$current_dir")$cmd"
+        echo "${PROMPT/_CWD_/$current_dir}$cmd"
     # Else, use standard `read` for command input.
     else
         bind '"\t":' 2>/dev/null
-        prompt="$(printf "$PROMPT" "$current_dir")"
-        read -e -r -p "$prompt" cmd
-        [[ -n "$cmd" ]] && history -s "$cmd"
+        read -e -r -p "${PROMPT/_CWD_/$current_dir}" cmd
+        history -s "$cmd"
     fi
 
     # Handle Ctrl-C etc.
@@ -336,7 +349,7 @@ while true; do
         continue
     fi
 
-    # Run the command in the correct directory
+    # Run the command with our environment and correct directory.
     current_dir_before="$current_dir"
     ssh_exec_track "export $REMOTE_ENV; cd \"$current_dir\" && $cmd"
     current_status=$?

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # readx - part of panssh.
-# Test with: cmd=$(bash --init-file readx.source.sh | tail -n1) && echo "cmd: $cmd"
+# Test with: cmd=$(bash --init-file readx.source.sh | tail -n1); echo "cmd: $cmd"
 
 [[ "${BASH_SOURCE[0]}" != "${0}" ]] || {
   echo "This script should not be executed directly." >&2
@@ -22,8 +22,7 @@ _readx_override_completion() {
   [[ "$type" != "-F" ]] && return
 
   # Use our complete function instead.
-  # Note adding -o bashdefault may help?
-  $complete -o filenames -o nospace -o bashdefault -o default $type _readx_complete $command
+  $complete -o filenames -o nospace -o default $type _readx_complete $command
 }
 
 # Loop through existing completions and override them.
@@ -38,13 +37,14 @@ _readx_override_completions() {
 _readx_complete() {
   local partial results
 
-  (( COMP_CWORD > 0 )) && partial="${COMP_WORDS[COMP_CWORD]}"
+  (( COMP_CWORD >= 0 )) && partial="${COMP_WORDS[COMP_CWORD]}"
 
-  if [[ "$partial" == "$_READX_PARTIAL_LAST" ]]; then
-    # If the partial matches the last completion, reuse cached results
+  if [[ -n "${_READX_PARTIAL_LAST+x}" ]] \
+  && [[ "$partial" == "$_READX_PARTIAL_LAST" ]]; then
+    # The partial matches the last completion - reuse cached results.
     COMPREPLY=( "${_READX_RESULTS_LAST[@]}" )
   else
-    # Use ls -AdLpv1 to list completions (dirs have trailing slashes)
+    # Use ls -AdLpv1 to list completions (dirs have trailing slashes).
     results=$(_readx_exec "ls -AdLpv1 \"$partial\"* 2>/dev/null")
     COMPREPLY=( $(printf "%s\n" "$results") )
 
@@ -61,16 +61,10 @@ _readx_exec() {
     return $?
 }
 
-_readx_capture_enter() {
+# Called via `bind` when ENTER is pressed.
+_readx_enter() {
   local status="$?"
-
-  # Remove leading and trailing whitespace from the input line.
-  trimmed="${READLINE_LINE#"${READLINE_LINE%%[![:space:]]*}"}"
-  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-
-  # Add to history.
-  [[ -n "$trimmed" ]] && history -s "$trimmed"
-
+  history -s "$READLINE_LINE"
   echo "$READLINE_LINE"
   exit $status 2>/dev/null
 }
@@ -82,7 +76,7 @@ _readx_capture_enter() {
 _readx_override_completions
 
 # Bind ENTER key to capture input and exit.
-bind -x '"\r": _readx_capture_enter' 2>/dev/null
+bind -x '"\r": _readx_enter'
 
 # Set prompt provided by the parent script.
 [[ -n "$READX_PROMPT" ]] && PS1="$READX_PROMPT" || PS1="\$ "
