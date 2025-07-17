@@ -253,6 +253,8 @@ else
 fi
 
 if [[ -n "$READX_PATH" ]]; then
+    READX_FIRST_TIME=1
+
     # Get local colour settings.
     CLR0=$(tput sgr0 2>/dev/null) \
     && CLR1=$(tput setaf 1 2>/dev/null) \
@@ -301,18 +303,20 @@ ssh_exec "mkdir -p \"$REMOTE_HOME\""
 # --- Main loop ---
 trap 'interrupted=1' SIGINT
 while true; do
-    # If readx was found, use it for command input.
     if [[ -n "$READX_PATH" ]]; then
+        # readx is available - use it for command input.
         export READX_EXEC="ssh $SSH_OPTIONS $USER@$HOST 'echo %s | bash'"
         export REMOTE_ENV CWD="$current_dir"
         export READX_PROMPT="${PROMPT_PS1/_CWD_/$current_dir}"
+        export READX_FIRST_TIME
 
         # Use bash interactive to read command input with completion.
         cmd=$(/usr/bin/env bash --init-file "$READX_PATH")
         # Re-display the prompt and input, to match bash interactive.
         echo "${PROMPT/_CWD_/$current_dir}$cmd"
-    # Else, use standard `read` for command input.
+        READX_FIRST_TIME=0
     else
+        # readx is not available - use `read` for command input.
         bind '"\t":' 2>/dev/null
         read -e -r -p "${PROMPT/_CWD_/$current_dir}" cmd
         history -s "$cmd"

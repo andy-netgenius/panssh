@@ -32,14 +32,18 @@ _readx_include_bash_completion() {
     )
   fi
 
-  # Source the first readable, non-empty file found.
+  # Source the first matching, readable, non-empty file found.
   for path in "${completion_paths[@]}"; do
     if [[ -s "$path" ]]; then
       source "$path" && return 0
     fi
   done
 
-  echo -e "🟡 Local bash_completion script was not found.\n" >&2
+  # First time only, report a warning.
+  if (( READX_FIRST_TIME == 1 )); then
+    echo -e "🟡 Local bash_completion script was not found.\n" >&2
+  fi
+
   return 1
 }
 
