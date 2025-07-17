@@ -4,10 +4,6 @@
 
 You can do almost everything that you could if a standard SSH login were available, and it looks and feels near identical.
 
-##### A short summary by ChatGPT of why you may want to use it:
-
-[Finally, real SSH-like access on Pantheon](https://chatgpt.com/s/t_685ee5f3b51c8191b826430aeaf94aa0)
-
 ### Recent changes
 * Tab-completion is now included, on supporting systems:
   * Local site and environment names.
