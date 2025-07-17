@@ -71,6 +71,7 @@ _readx_enter() {
 
 # Ensure standard completions.
 [[ -f /usr/share/bash-completion/bash_completion ]] && source /usr/share/bash-completion/bash_completion
+[[ -f /opt/homebrew/etc/bash_completion ]] && source /opt/homebrew/etc/bash_completion
 
 # Set up our overrides.
 _readx_override_completions
