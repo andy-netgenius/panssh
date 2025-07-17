@@ -272,7 +272,7 @@ if [[ -n "$READX_PATH" ]]; then
         "$SITE_NAME" "$ENV_ID" "_CWD_"
     )
 else
-    # Prompt used with `read` (colour is not)
+    # Prompt used with `read` (ANSI colour is not supported)
     PROMPT=$( printf "%s.%s:%s\$ " \
         "$SITE_NAME" "$ENV_ID" "_CWD_"
     )
