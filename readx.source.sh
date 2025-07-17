@@ -7,6 +7,42 @@
   exit 1
 }
 
+# Find and include the bash_completion script.
+_readx_include_bash_completion() {
+  # Detect OS type
+  local OS_TYPE=$(uname -s)
+
+  # List of potential bash_completion entrypoints.
+  local completion_paths=()
+
+  if [[ "$OS_TYPE" == "Darwin" ]]; then
+    # macOS. Check common locations for both Silicon and Intel.
+    completion_paths+=(
+      /opt/homebrew/etc/profile.d/bash_completion.sh       # Homebrew bash-completion@2 (Silicon)
+      /usr/local/etc/profile.d/bash_completion.sh          # Homebrew bash-completion@2 (Intel)
+      /opt/homebrew/etc/bash_completion                    # Older Homebrew (Silicon)
+      /usr/local/etc/bash_completion                       # Older Homebrew (Intel)
+    )
+  else
+    # Linux or similar, check common locations.
+    completion_paths+=(
+      /etc/profile.d/bash_completion.sh                    # bash-completion@2
+      /etc/bash_completion                                 # Traditional
+      /usr/share/bash-completion/bash_completion           # Common fallback
+    )
+  fi
+
+  # Source the first readable, non-empty file found.
+  for path in "${completion_paths[@]}"; do
+    if [[ -s "$path" ]]; then
+      source "$path" && return 0
+    fi
+  done
+
+  echo -e "🟡 Local bash_completion script was not found.\n" >&2
+  return 1
+}
+
 # Override a completion.
 _readx_override_completion() {
   local args=("$@")
@@ -69,9 +105,8 @@ _readx_enter() {
   exit $status 2>/dev/null
 }
 
-# Ensure standard completions.
-[[ -f /usr/share/bash-completion/bash_completion ]] && source /usr/share/bash-completion/bash_completion
-[[ -f /opt/homebrew/etc/bash_completion ]] && source /opt/homebrew/etc/bash_completion
+# Include the bash_completion script if available.
+_readx_include_bash_completion
 
 # Set up our overrides.
 _readx_override_completions

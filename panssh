@@ -69,7 +69,7 @@ readonly ENV_ID="${BASH_REMATCH[2]}"
 readonly SITE_ID=$(grep -E "^$SITE_NAME," "$SITES_FILE" | cut -d',' -f2)
 
 if [[ -z "$SITE_ID" ]]; then
-    echo "❌ Site '$SITE_NAME' not found in $SITES_FILE"
+    echo "❌ Site '$SITE_NAME' not found in $SITES_FILE" >&2
     exit 1
 fi
 
@@ -247,7 +247,7 @@ else
     fi
 
     if [[ ! -f "$READX_PATH" ]]; then
-        echo -e "❌ Failed to find readx.source.sh. Tab-completion will not be available.\n"
+        echo -e "❌ Failed to find readx.source.sh. Tab-completion will not be available.\n" >&2
         unset READX_PATH
     fi
 fi
