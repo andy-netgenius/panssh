@@ -8,6 +8,11 @@ You can do almost everything that you could if a standard SSH login were availab
 
 [Finally, real SSH-like access on Pantheon](https://chatgpt.com/s/t_685ee5f3b51c8191b826430aeaf94aa0)
 
+### Recent changes
+* Tab-completion is now included, on supporting systems:
+  * Local site and environment names.
+  * Remote directory and file names.
+
 ---
 
 ## 📌 Usage
@@ -49,9 +54,11 @@ echo "commands" | panssh site.env
 
 - A Pantheon user account with SSH access configured.
 - SSH client with a key pair registered in your Pantheon account.
-- Bash 3.2+
+- Bash 3.2+ for basic operation.
+- Bash 4.0+ to support tab-completion of remote directory and file names.
+- Common Linux/Unix utilities.
 - For local file viewing / editing:
-  - A terminal-based editor (e.g., `nano`, `vim`) or a configured `$EDITOR` variable.
+  - A text-based editor such as `nano` or `vim`, or a suitably configured `$EDITOR`.
   - Standard `scp` and `shasum` utilities.
 - [Terminus CLI](https://pantheon.io/docs/terminus) (needed only to fetch a list of your accessible sites).
 
@@ -59,12 +66,44 @@ echo "commands" | panssh site.env
 
 ## 📦 Installation
 
-Just mark the script as executable, then copy or move it to any suitable directory that's included in your PATH.
+### No installation
+
+* Mark the main `panssh` script as executable: `chmod +x panssh`
+* Run it as just `./panssh` to see further information.
+
+### Minimal installation
+
+Mark the main `panssh` script as executable, then copy or move it to any suitable directory that's included in your PATH.
 
 ```
 chmod +x panssh
 sudo mv panssh /usr/local/bin/
 ```
+
+Run it as just `panssh` to see further information.
+
+### Optional: tab-completion of local site and environment names
+
+Copy the `panssh` completion script from `bash-completion/` to the `bash-completions/completions` directory on your system.
+* For recent Ubuntu distributions, you can probably use `/usr/local/share/bash-completion/completions/`
+* For MacOS, maybe `/opt/homebrew/etc/bash_completion.d/` or `usr/local/etc/bash_completion.d`, depending on your system.
+
+Test tab-completion by entering `panssh ` then pressing the tab key.
+
+### Optional: tab-completion of remote directory and file names
+
+This feature requires Bash 4 or higher. 
+
+* **On MacOS:**
+  * You can install Bash 5 with [Homebrew](https://formulae.brew.sh/formula/bash).
+  * You will also need [bash-completion](https://formulae.brew.sh/formula/bash-completion) or [bash-completion@2](https://formulae.brew.sh/formula/bash-completion@2)
+
+Copy `readx.source.sh` to one of:
+  * The same location as the main `panssh` script.
+  * A subdirectory `../lib/panssh` relative to the location of the main `panssh` script.
+    * For example: `/usr/local/lib/panssh/` if `panssh` itself is in `/usr/local/bin/`
+
+Test tab-completion by using `panssh` to connect to a Pantheon site, then press the tab key once or twice - the remote directory contents should be listed.
 
 ---
 
@@ -82,17 +121,19 @@ To generate or update it, run:
 terminus site:list --format=csv --fields=name,id > $HOME/.panssh.sites
 ```
 
-This file maps Pantheon site names to internal site IDs used for SSH routing.
+This file maps Pantheon site names to their site IDs, which are used to form SSH host and user names.
 
 ---
 
 ## ✨ Features
 
 - Most things will just work as you would expect. A few won't (see limitations, below).
-- Provides local viewing and editing of remote files, with automatic download and upload.
-- Supports non-interactive execution from local scripts or piped input.
-- Supports arrow-key command history for the current session.
-- Offers optional auto-listing of files after directory changes.
+- Local viewing and editing of remote files, with automatic download and upload.
+- Non-interactive execution from local scripts or piped input.
+- Arrow-key command history for the current session.
+- Local tab-completion of site and environment names.
+- Tab-completion of remote directory and file names.
+- Optional automatic listing of directory contents after switching directory.
 - Uses persistent SSH connections for best responsiveness.
 
 ---
@@ -101,8 +142,8 @@ This file maps Pantheon site names to internal site IDs used for SSH routing.
 
 - No support for interactive input (`more`, `rm -i`, `drush` confirmation prompts, etc). Some such programs will act as if ENTER was pressed and use a default value. Others will simply not work.
 - Some behaviours will differ compared with a real interactive SSH session.
-- No tab completion for remote filenames or commands yet. It's underdevelopment and will be available in a new release very soon.
-- Relies on discoverable but publicly undocumented features of Pantheon's SSH service, and their user and host naming conventions.
+- Tab-completion for remote directory and file names requires Bash 4+.
+- **Relies on discoverable but publicly undocumented features of Pantheon's SSH service, and their user and host naming conventions.**
 
 ---
 

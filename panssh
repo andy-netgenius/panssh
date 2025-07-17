@@ -1,33 +1,43 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 ###############################################################################
-# panssh - Pantheon interactive SSH session emulator
+# PanSSH - Pantheon interactive SSH session emulator
 #
 # Emulates an interactive ssh connection to a Pantheon site's application
 # environment.
 #
-# Version: 1.0.0
-# 
 # Author: Andy Inman - andy@lastcallmedia.com
 # Copyright (c) 2025 Last Call Media
 # License: MIT
 ###############################################################################
 
+readonly PANSSH_VERSION="PanSSH 1.2.0"
+
 # --- Configuration ---
 readonly SSH_PORT="2222"
 
 readonly SITES_FILE="$HOME/.panssh.sites"
-readonly PANSSH_TEMP_DIR="/tmp/panssh-$USER"
-mkdir -p -m 700 "$PANSSH_TEMP_DIR"
+readonly STORAGE_DIR="$HOME/.panssh"
+readonly TEMP_DIR="/tmp/panssh-$$"
+mkdir -p -m 700 "$STORAGE_DIR" "$TEMP_DIR"
 
+readonly LOCAL_HOST=$(hostname -s)
+readonly LOCAL_USER=$(whoami)
+readonly REMOTE_HOME="/tmp/panssh-home.$LOCAL_USER.$LOCAL_HOST"
+readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME/.cache\""
+
+readonly SSH_SOCKET="$TEMP_DIR/ssh.socket"
 readonly SSH_GENERAL_OPTIONS=" \
   -o ControlMaster=auto \
-  -o ControlPath=$PANSSH_TEMP_DIR/cm-%C \
+  -o ControlPath=$SSH_SOCKET \
   -o ControlPersist=5m \
   -o StrictHostKeyChecking=no \
   -o ConnectTimeout=30"
 readonly SSH_OPTIONS="-p $SSH_PORT $SSH_GENERAL_OPTIONS"
 readonly SCP_OPTIONS="-q -P $SSH_PORT $SSH_GENERAL_OPTIONS"
+
+# Location of this script.
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- Load SITE_IDs from config ---
 if [[ ! -f "$SITES_FILE" ]]; then
@@ -38,13 +48,14 @@ if [[ ! -f "$SITES_FILE" ]]; then
     exit 1
 fi
 
-# --- Parse site.env argument ---
+# --- Parse command-line, get site.env argument ---
 if [[ ! "$1" =~ ^([a-zA-Z0-9\-]+)\.([a-zA-Z0-9\-]+)$ ]]; then
+    echo -e "\n$PANSSH_VERSION"
     echo -e "\nUsage examples:\n"
     echo -e "  panssh site.env"
     echo -e "  panssh site.env \"commands\""
     echo -e "  panssh site.env < script.sh"
-    echo -e "  echo \"commands\" | site.env"
+    echo -e "  echo \"commands\" | panssh site.env"
     echo -e "\nSpecial commands:\n"
     echo -e "  View a file: .vw <filepath>"
     echo -e "  Edit a file: .ed <filepath>"
@@ -58,7 +69,7 @@ readonly ENV_ID="${BASH_REMATCH[2]}"
 readonly SITE_ID=$(grep -E "^$SITE_NAME," "$SITES_FILE" | cut -d',' -f2)
 
 if [[ -z "$SITE_ID" ]]; then
-    echo "❌ Site '$SITE_NAME' not found in $SITES_FILE"
+    echo "❌ Site '$SITE_NAME' not found in $SITES_FILE" >&2
     exit 1
 fi
 
@@ -94,15 +105,18 @@ ssh_exec_track() {
     return "$status"
 }
 
-# --- SSH connection close ---
-cleanup_ssh() {
+# --- Clean up and close SSH connection ---
+cleanup() {
     local status=$?
+    history -a
     ssh -O exit $SSH_OPTIONS "$USER@$HOST" 2>/dev/null
+    rm -r "$TEMP_DIR" #> /dev/null 2>&1
+    echo -e "\nConnection to $SITE_NAME.$ENV_ID closed." >&2
     exit $status
 }
-trap cleanup_ssh EXIT
+trap cleanup EXIT
 
-# --- Handle commands from command-line or stdin ---
+# --- Execute commands from command-line or stdin ---
 if [[ $# -gt 1 ]] || ! [ -t 0 ]; then
     if [[ $# -gt 1 ]]; then
         shift
@@ -110,18 +124,17 @@ if [[ $# -gt 1 ]] || ! [ -t 0 ]; then
     else
         cmd=$(cat)
     fi
-    ssh_exec "$cmd"
+    ssh_exec "export $REMOTE_ENV; $cmd"
     exit $?
 fi
 
 # --- File transfer between local and host ---
 transfer_file() {
-    local from="$1"
-    local to="$2"
-    scp $SCP_OPTIONS "$from" "$to"
+    scp $SCP_OPTIONS "$1" "$2"
+    return $?
 }
 
-# --- Remote edit command handler ---
+# --- Launch local text editor ---
 launch_editor() {
     local file="$1"
     shift
@@ -139,115 +152,181 @@ launch_editor() {
     fi
 }
 
-view_remote_file() {
-    local remote_path="$1"
-    shift
+# --- Edit or view a remote file ---
+edit_file() {
+    local action="$1"
+    local remote_path="$2"
+    shift 2
     local editor_args=("$@")
 
-    # Resolve full remote path
-    if [[ "$remote_path" != /* ]]; then
-        remote_path="$current_dir/$remote_path"
-    fi
+    # Resolve remote path.
+    remote_path=$(ssh_exec "export $REMOTE_ENV; cd \"$current_dir\" && eval realpath \"$remote_path\"")
 
-    # Create a temp file for local editing
-    local local_file
-    local_file="$(mktemp $PANSSH_TEMP_DIR/panssh-edit.XXXXXX)"
+    local can_edit=0
+    local download_needed=0
 
-    # Download file from remote if it exists
-    if ! ssh_exec "[ -f \"$remote_path\" ]"; then
-        echo "❓ File not found."
-        return 1
-    elif ! ssh_exec "[ -r \"$remote_path\" ]"; then
-        echo "🚫 File is not readable."
-        return 1
-    else
-        transfer_file "$USER@$HOST:$remote_path" "$local_file"
-    fi
-
-    # Run editor
-    launch_editor "$local_file" "${editor_args[@]}"
-    rm -f "$local_file"
-}
-
-edit_remote_file() {
-    local remote_path="$1"
-    shift
-    local editor_args=("$@")
-
-    # Resolve full remote path
-    if [[ "$remote_path" != /* ]]; then
-        remote_path="$current_dir/$remote_path"
-    fi
-
-    # Create a temp file for local editing
-    local local_file
-    local_file="$(mktemp $PANSSH_TEMP_DIR/panssh-edit.XXXXXX)"
-
-    # Download file from remote if it exists
-    if ssh_exec "[ -f \"$remote_path\" ]"; then
-        if ! ssh_exec "[ -r \"$remote_path\" ]"; then
+    if ssh_exec "[ -e \"$remote_path\" ]"; then
+        # Path exists - check what's there.
+        if ssh_exec "[ -d \"$remote_path\" ]"; then
+            echo "🟡 Path is a directory."
+        elif ! ssh_exec "[ -f \"$remote_path\" ]"; then
+            echo "🟡 Not a regular file."
+        elif ! ssh_exec "[ -r \"$remote_path\" ]"; then
             echo "🚫 File is not readable."
-            return 1
-        fi
-
-        if ! ssh_exec "[ -w \"$remote_path\" ]"; then
+        elif [[ "$action" == "ed" ]] && ! ssh_exec "[ -w \"$remote_path\" ]"; then
             echo "🚫 File is not writable."
-            return 1
         else
-            transfer_file "$USER@$HOST:$remote_path" "$local_file"
+            can_edit=1  
+            download_needed=1
+        fi
+    elif [[ "$action" == "ed" ]]; then
+        # No existing file - check we can create it.
+        local dirname=$(dirname "$remote_path")
+        if ! ssh_exec "[ -d \"$dirname\" ]"; then
+            echo "🚫 Directory not found."
+        elif ! ssh_exec "[ -w \"$dirname\" ]"; then
+            echo "🚫 Directory is not writable."
+        else
+            can_edit=1  
         fi
     else
-        local dirname=$(dirname "$remote_path")
-        if ! ssh_exec "[ -w \"$dirname\" ]"; then
-            echo "🚫 Directory is not writable."
-            return 1
-        fi 
+        echo "🚫 File not found."
     fi
 
-    # Get initial checksum
-    local sum_before
-    sum_before=$(shasum "$local_file" | awk '{print $1}')
+    # Return now if we can't edit the requested file.
+    (( can_edit == 1 )) || return 1
+
+    # Create a temporary file for local editing.
+    local filename=$(basename "$remote_path")
+    local local_file="$TEMP_DIR/$filename";
+
+    # Download the file, if needed.
+    if (( download_needed == 1 )); then
+        if ! transfer_file "$USER@$HOST:$remote_path" "$local_file"; then
+            echo "❌ Failed to download file."
+            [[ -f "$local_file" ]] && rm "$local_file"
+            return 1
+        fi
+        # Get checksum before editing.
+        local sum_before=$(shasum "$local_file" | awk '{print $1}')
+    fi
 
     # Run editor
     if launch_editor "$local_file" "${editor_args[@]}"; then
-        # Get new checksum.
-        local sum_after
-        sum_after=$(shasum "$local_file" | awk '{print $1}')
-
-        if [[ "$sum_after" == "$sum_before" ]]; then
-            echo "🟡 File has not changed."
-        else
-            transfer_file "$local_file" "$USER@$HOST:$remote_path"
+        # In edit mode, was a file either downloaded or created?
+        if [[ "$action" == "ed" ]] && [[ -f $local_file ]]; then
+            # Get new checksum.
+            local sum_after=$(shasum "$local_file" | awk '{print $1}')
+            # If the file has changed, upload it to remote.
+            if [[ "$sum_after" != "$sum_before" ]]; then
+                transfer_file "$local_file" "$USER@$HOST:$remote_path"
+            else
+                echo "🟡 File has not changed."
+            fi
         fi
     fi
 
-    rm -f "$local_file"
+    [[ -f "$local_file" ]] && rm "$local_file"
+    return 0
 }
 
 # -------- Interactive operation --------
 
 # First, check that we can connect successfully.
 ssh_exec "exit" || exit $?
-echo -e "\nConnected to $SITE_NAME.$ENV_ID\n"
+echo -e "\n$PANSSH_VERSION: Connected to $SITE_NAME.$ENV_ID\n"
 
+# Check for Bash version 4+.
+if ! ( [[ $BASH_VERSION =~ ^([0-9]+)\. ]] && (( ${BASH_REMATCH[1]} >= 4 )) ) then
+    echo -e "ℹ️  Tab-completion in PanSSH requires Bash 4+\n"
+else
+    # Find our readx script.
+    READX_PATH="$SCRIPT_DIR/readx.source.sh"
+    if [[ ! -f "$READX_PATH" ]]; then
+        READX_PATH="$SCRIPT_DIR/../lib/panssh/readx.source.sh"
+    fi
+
+    if [[ ! -f "$READX_PATH" ]]; then
+        echo -e "❌ Failed to find readx.source.sh. Tab-completion will not be available.\n" >&2
+        unset READX_PATH
+    fi
+fi
+
+if [[ -n "$READX_PATH" ]]; then
+    READX_FIRST_TIME=1
+
+    # Get local colour settings.
+    CLR0=$(tput sgr0 2>/dev/null) \
+    && CLR1=$(tput setaf 1 2>/dev/null) \
+    && CLR2=$(tput setaf 3 2>/dev/null) \
+    && CLR3=$(tput setaf 6 2>/dev/null)
+
+    # Prompt used with `echo`.
+    PROMPT=$( printf "${CLR1}%s${CLR0}.${CLR2}%s${CLR0}:${CLR3}%s${CLR0}\$ " \
+        "$SITE_NAME" "$ENV_ID" "_CWD_"
+    )
+
+    # Prompt used with readx (bash command line input).
+    PROMPT_PS1=$( printf \
+        "\[${CLR1}\]%s\[${CLR0}\].\[${CLR2}\]%s\[${CLR0}\]:\[${CLR3}\]%s\[${CLR0}\]\$ " \
+        "$SITE_NAME" "$ENV_ID" "_CWD_"
+    )
+else
+    # Prompt used with `read` (ANSI colour is not supported)
+    PROMPT=$( printf "%s.%s:%s\$ " \
+        "$SITE_NAME" "$ENV_ID" "_CWD_"
+    )
+fi
+
+# Set up command history behaviour.
+export HISTFILE="$STORAGE_DIR/$SITE_NAME.$ENV_ID.history"
+export HISTCONTROL=ignorespace:ignoredups:erasedups
+history -r
+
+# Set up initial state.
 auto_ls=0
 current_status=0
 current_dir="/code"
-ssh_exec "cd $current_dir"
 
-interrupted=0
-trap 'interrupted=1' SIGINT
-bind '"\t":' 2>/dev/null
+# Basic environment checks.
+if ssh_exec "cd $current_dir"; then
+    if ssh_exec "[ -w $current_dir ]"; then
+        echo -e "🟡 $current_dir directory is writable (SFTP mode)\n"
+    else
+        echo -e "🚫 $current_dir directory is read-only (Git mode)\n"
+    fi
+fi
+
+# Create our remote home directory if it doesn't exist.
+ssh_exec "mkdir -p \"$REMOTE_HOME\""
 
 # --- Main loop ---
+trap 'interrupted=1' SIGINT
 while true; do
-    interrupted=0
-    read -e -p "$SITE_NAME.$ENV_ID:$current_dir> " cmd
+    if [[ -n "$READX_PATH" ]]; then
+        # readx is available - use it for command input.
+        export READX_EXEC="ssh $SSH_OPTIONS $USER@$HOST 'echo %s | bash'"
+        export REMOTE_ENV CWD="$current_dir"
+        export READX_PROMPT="${PROMPT_PS1/_CWD_/$current_dir}"
+        export READX_FIRST_TIME
 
-    [[ "$interrupted" -eq 1 ]] && continue
+        # Use bash interactive to read command input with completion.
+        cmd=$(/usr/bin/env bash --init-file "$READX_PATH")
+        # Re-display the prompt and input, to match bash interactive.
+        echo "${PROMPT/_CWD_/$current_dir}$cmd"
+        READX_FIRST_TIME=0
+    else
+        # readx is not available - use `read` for command input.
+        bind '"\t":' 2>/dev/null
+        read -e -r -p "${PROMPT/_CWD_/$current_dir}" cmd
+        history -s "$cmd"
+    fi
+
+    # Handle Ctrl-C etc.
+    (( interrupted == 1 )) && unset interrupted && continue
+
+    # Handle empty input.
     [[ -z "$cmd" ]] && continue
-
-    history -s "$cmd"
 
     # Handle `exit`.
     [[ "$cmd" == "exit" ]] && break
@@ -257,17 +336,13 @@ while true; do
         action="${BASH_REMATCH[1]}"
         file_path="${BASH_REMATCH[2]}"
         read -ra editor_args <<< "${BASH_REMATCH[3]}"
-        if [[ "$action" == "ed" ]]; then
-            edit_remote_file "$file_path" "${editor_args[@]}"
-        else
-            view_remote_file "$file_path" "${editor_args[@]}"
-        fi
+        edit_file "$action" "$file_path" "${editor_args[@]}"
         continue
     fi
 
     # Handle toggling of auto-ls feature.
     if [[ "$cmd" == ".ls" ]]; then
-        if [[ "$auto_ls" -eq 0 ]]; then
+        if (( auto_ls == 0 )); then
             echo "✅ Auto-ls enabled"
             auto_ls=1
         else
@@ -277,9 +352,9 @@ while true; do
         continue
     fi
 
-    # Run the command in the correct directory
+    # Run the command with our environment and correct directory.
     current_dir_before="$current_dir"
-    ssh_exec_track "cd \"$current_dir\" && $cmd"
+    ssh_exec_track "export $REMOTE_ENV; cd \"$current_dir\" && $cmd"
     current_status=$?
 
     # Automatic directory listing if enabled and directory was changed.
