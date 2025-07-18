@@ -39,38 +39,49 @@ readonly SCP_OPTIONS="-q -P $SSH_PORT $SSH_GENERAL_OPTIONS"
 # Location of this script.
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# --- Load SITE_IDs from config ---
-if [[ ! -f "$SITES_FILE" ]]; then
-    echo "🟡 Sites file not found at: $SITES_FILE"
-    echo
-    echo "To create it, run:"
-    echo "  terminus site:list --format=csv --fields=name,id > $SITES_FILE"
-    exit 1
+# --- Fetch details of the requested site and environment ---
+if [[ -n "$PANTHEON_SITE_NAME" && -n "$PANTHEON_SITE" && -n "$PANTHEON_ENV_ID" ]]; then
+  # Lando, or some other situation where site details have been provided.
+  readonly SITE_NAME="$PANTHEON_SITE_NAME"
+  readonly ENV_ID="$PANTHEON_ENV_ID"
+  readonly SITE_ID="$PANTHEON_SITE"
 fi
 
-# --- Parse command-line, get site.env argument ---
-if [[ ! "$1" =~ ^([a-zA-Z0-9\-]+)\.([a-zA-Z0-9\-]+)$ ]]; then
-    echo -e "\n$PANSSH_VERSION"
-    echo -e "\nUsage examples:\n"
-    echo -e "  panssh site.env"
-    echo -e "  panssh site.env \"commands\""
-    echo -e "  panssh site.env < script.sh"
-    echo -e "  echo \"commands\" | panssh site.env"
-    echo -e "\nSpecial commands:\n"
-    echo -e "  View a file: .vw <filepath>"
-    echo -e "  Edit a file: .ed <filepath>"
-    echo -e "  Toggle automatic directory listing: .ls\n"
-    exit 1
-fi
+# If we don't already have site details, process the command line.
+if [[ -z "$SITE_NAME" ]]; then
+  # Parse the command-line: get site.env argument or display usage info.
+  if [[ ! "$1" =~ ^([a-zA-Z0-9\-]+)\.([a-zA-Z0-9\-]+)$ ]]; then
+      echo -e "\n$PANSSH_VERSION"
+      echo -e "\nUsage examples:\n"
+      echo -e "  panssh site.env"
+      echo -e "  panssh site.env \"commands\""
+      echo -e "  panssh site.env < script.sh"
+      echo -e "  echo \"commands\" | panssh site.env"
+      echo -e "\nSpecial commands:\n"
+      echo -e "  View a file: .vw <filepath>"
+      echo -e "  Edit a file: .ed <filepath>"
+      echo -e "  Toggle automatic directory listing: .ls\n"
+      exit 1
+  fi
 
-# Set site and environment names, lookup site ID.
-readonly SITE_NAME="${BASH_REMATCH[1]}"
-readonly ENV_ID="${BASH_REMATCH[2]}"
-readonly SITE_ID=$(grep -E "^$SITE_NAME," "$SITES_FILE" | cut -d',' -f2)
+  # Load info about our available sites.
+  if [[ ! -f "$SITES_FILE" ]]; then
+      echo "🟡 Sites file not found at: $SITES_FILE"
+      echo
+      echo "To create it, run:"
+      echo "  terminus site:list --format=csv --fields=name,id > $SITES_FILE"
+      exit 1
+  fi
 
-if [[ -z "$SITE_ID" ]]; then
-    echo "❌ Site '$SITE_NAME' not found in $SITES_FILE" >&2
-    exit 1
+  # Set site and environment names, lookup site ID.
+  readonly SITE_NAME="${BASH_REMATCH[1]}"
+  readonly ENV_ID="${BASH_REMATCH[2]}"
+  readonly SITE_ID=$(grep -E "^$SITE_NAME," "$SITES_FILE" | cut -d',' -f2)
+
+  if [[ -z "$SITE_ID" ]]; then
+      echo "❌ Site '$SITE_NAME' not found in $SITES_FILE" >&2
+      exit 1
+  fi
 fi
 
 readonly USER="$ENV_ID.$SITE_ID"

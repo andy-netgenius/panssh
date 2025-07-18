@@ -1,0 +1,23 @@
+services:
+  appserver:
+    build_as_root:
+      - echo "----------------- Installing panssh ---------------"
+      # PanSSH  main script.
+      - curl -so /usr/local/bin/panssh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/tags/latest/panssh
+      - chmod +x /usr/local/bin/panssh
+      # PanSSH readx utility script.
+      - mkdir -p /usr/local/lib/panssh/
+      - curl -so /usr/local/lib/panssh/readx.source.sh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/tags/latest/readx.source.sh
+      # Standard Bash tab-completion support.
+      - apt-get -qqq update && apt-get -qqq install bash-completion
+      # Bash-completion support for the panssh command (and other commands in lando ssh).
+      # We would have to either uncomment /etc/bash.bashrc "enable bash completion" section,
+      # or add the equivalent into ~/.bashrc, or other suitable location.
+      #- mkdir -p /usr/local/share/bash-completion/completions
+      #- curl -so /usr/share/bash-completion/completions/panssh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/tags/latest/bash-completion/panssh
+    build:
+      - hash terminus && terminus auth:login && terminus site:list --format=csv --fields=name,id > $HOME/.panssh.sites
+
+tooling:
+  panssh:
+    service: appserver
