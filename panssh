@@ -26,30 +26,29 @@ readonly LOCAL_USER=$(whoami)
 readonly REMOTE_HOME="/tmp/panssh-home.$LOCAL_USER.$LOCAL_HOST"
 readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME/.cache\""
 
-readonly SSH_SOCKET="$TEMP_DIR/ssh.socket"
-readonly SSH_GENERAL_OPTIONS=" \
-  -o LogLevel=info \
+readonly SSH_OPTIONS=" \
+  -o ConnectTimeout=30 \
   -o ControlMaster=auto \
-  -o ControlPath=$SSH_SOCKET \
+  -o ControlPath=$TEMP_DIR/ssh.socket \
   -o ControlPersist=5m \
-  -o StrictHostKeyChecking=no \
-  -o ConnectTimeout=30"
-readonly SSH_OPTIONS="-p $SSH_PORT $SSH_GENERAL_OPTIONS"
-readonly SCP_OPTIONS="-q -P $SSH_PORT $SSH_GENERAL_OPTIONS"
+  -o LogLevel=info \
+  -o Port=$SSH_PORT \
+  -o StrictHostKeyChecking=accept-new \
+  -o UserKnownHostsFile=$STORAGE_DIR/known_hosts"
 
 # Location of this script.
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# --- Load SITE_IDs from config ---
+# Load SITE_IDs from config ---
 if [[ ! -f "$SITES_FILE" ]]; then
-    echo "🟡 Sites file not found at: $SITES_FILE"
-    echo
-    echo "To create it, run:"
-    echo "  terminus site:list --format=csv --fields=name,id > $SITES_FILE"
+    echo -e "\n🟡 Sites file not found at: $SITES_FILE"
+    echo -e "\nTo create it, run:"
+    [[ "$LANDO" == "ON" ]] && echo -e "  lando ssh"
+    echo -e "  terminus site:list --format=csv --fields=name,id > $SITES_FILE\n"
     exit 1
 fi
 
-# --- Parse command-line, get site.env argument ---
+# Parse command-line, get site.env argument.
 if [[ ! "$1" =~ ^([a-zA-Z0-9\-]+)\.([a-zA-Z0-9\-]+)$ ]]; then
     echo -e "\n$PANSSH_VERSION"
     echo -e "\nUsage examples:\n"
@@ -62,6 +61,7 @@ if [[ ! "$1" =~ ^([a-zA-Z0-9\-]+)\.([a-zA-Z0-9\-]+)$ ]]; then
     echo -e "  Edit a file: .ed <filepath>"
     echo -e "  Toggle automatic directory listing: .ls\n"
     echo -e "To create or update your available sites configuration, run:"
+    [[ "$LANDO" == "ON" ]] && echo -e "  lando ssh"
     echo -e "  terminus site:list --format=csv --fields=name,id > $SITES_FILE\n"
 
     exit 1
@@ -134,7 +134,13 @@ fi
 
 # --- File transfer between local and host ---
 transfer_file() {
-    scp $SCP_OPTIONS "$1" "$2"
+    # For some reason, scp fails under Lando, reason unknown.
+    # Until resolved, we use rsync as a workaround.
+    if [[ $LANDO != "ON" ]]; then
+    scp -q $SSH_OPTIONS "$1" "$2"
+    else
+      rsync -qe "ssh $SSH_OPTIONS" $1 $2
+    fi
     return $?
 }
 

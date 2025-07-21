@@ -20,11 +20,13 @@ panssh site.env
 ```
 
 ### Non-Interactive
-```
-# From command-line:
-panssh site.env "command1; command2; ..."
 
-# From stdin:
+##### From command-line:
+```
+panssh site.env "command1; command2; ..."
+```
+##### From stdin:
+```
 panssh site.env < script.sh
 echo "commands" | panssh site.env
 ```

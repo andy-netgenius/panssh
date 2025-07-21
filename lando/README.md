@@ -1,6 +1,10 @@
 # 🖥️ PanSSH under Lando
 
-This file is an optional part of the [PanSSH](https://github.com/LastCallMedia/panssh) utility. It provides service and tooling setup to facilitate use of PanSSH under Lando.
+This file is an optional part of the [PanSSH](https://github.com/LastCallMedia/panssh) utility. It provides service and tooling setup to facilitate use of PanSSH under [Lando](https://lando.dev/).
+
+## ✅ Requirements
+
+- A Lando application built using the [Lando Pantheon Plugin](https://docs.lando.dev/plugins/pantheon/index.html) or other configuration which meets [PanSSH requirements](https://github.com/LastCallMedia/panssh/blob/main/README.md#-requirements).
 
 ## 📦 Installation
 
