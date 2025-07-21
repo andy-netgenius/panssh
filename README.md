@@ -1,11 +1,12 @@
-# 🖥️ panssh – Pantheon Interactive SSH Session Emulator
+# 🖥️ PanSSH – Pantheon Interactive SSH Session Emulator
 
-`panssh` emulates an interactive SSH connection to a Pantheon site's application environment using only their available (limited) SSH service. It provides command history, local editing of remote files and an emulated current working directory.
+PanSSH emulates an interactive SSH connection to a Pantheon site's application environment using only their available (limited) SSH service. It provides command history, local editing of remote files and an emulated current working directory.
 
 You can do almost everything that you could if a standard SSH login were available, and it looks and feels near identical.
 
 ### Recent changes
-* Tab-completion is now included, on supporting systems:
+* 1.2.1: Added `.lando.panssh.yml`, which provides easy setup of PanSSH in a [Lando](https://lando.dev/) project.
+* 1.2.0: Tab-completion is now included, on supporting systems:
   * Local site and environment names.
   * Remote directory and file names.
 
@@ -64,8 +65,20 @@ echo "commands" | panssh site.env
 
 ### No installation
 
-* Mark the main `panssh` script as executable: `chmod +x panssh`
-* Run it as just `./panssh` to see further information.
+Either clone the [PanSSH repository](https://github.com/LastCallMedia/panssh) or download the individual files:
+
+The main script:
+```
+curl -so panssh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/tags/latest/panssh
+```
+
+Optionally, to support tab-completion:
+```
+curl -so readx.source.sh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/tags/latest/readx.source.sh
+```
+
+* Mark the main script as executable: `chmod +x panssh`
+* Run it as just `./panssh` to see further instructions.
 
 ### Minimal installation
 
@@ -76,7 +89,7 @@ chmod +x panssh
 sudo mv panssh /usr/local/bin/
 ```
 
-Run it as just `panssh` to see further information.
+Run it as just `panssh` to see further instructions.
 
 ### Optional: tab-completion of local site and environment names
 

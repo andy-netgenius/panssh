@@ -1,15 +1,8 @@
 # This file is an optional part of the PanSSH utility.
-# It provides service and tooling setup to enable use of PanSSH under Lando.
-# See: https://github.com/LastCallMedia/panssh
+# It provides service and tooling setup to facilitate use of PanSSH under Lando.
 
-# Installation:
-# Place this file in the same location as your application's .lando.yml file.
-# Do one of:
-#   Rename it to lando.local.yml, or merge it into your existing .lando.local.yml file.
-#   Add .lando.panssh.yml into the postLandoFiles section of your ~/.lando/config.yml
-# See: https://docs.lando.dev/landofile/#configuration
-#
-# Run lando rebuild to apply the changes.
+# See: https://github.com/LastCallMedia/panssh
+# and: ttps://github.com/LastCallMedia/panssh/lando/README.md
 
 # Commands provided:
 #

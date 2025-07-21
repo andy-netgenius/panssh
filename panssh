@@ -11,7 +11,7 @@
 # License: MIT
 ###############################################################################
 
-readonly PANSSH_VERSION="PanSSH 1.2.0"
+readonly PANSSH_VERSION="PanSSH 1.2.1"
 
 # --- Configuration ---
 readonly SSH_PORT="2222"
@@ -61,6 +61,9 @@ if [[ ! "$1" =~ ^([a-zA-Z0-9\-]+)\.([a-zA-Z0-9\-]+)$ ]]; then
     echo -e "  View a file: .vw <filepath>"
     echo -e "  Edit a file: .ed <filepath>"
     echo -e "  Toggle automatic directory listing: .ls\n"
+    echo -e "To create or update your available sites configuration, run:"
+    echo -e "  terminus site:list --format=csv --fields=name,id > $SITES_FILE\n"
+
     exit 1
 fi
 
