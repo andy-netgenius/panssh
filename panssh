@@ -24,7 +24,7 @@ mkdir -p -m 700 "$STORAGE_DIR" "$TEMP_DIR"
 readonly LOCAL_HOST=$(hostname -s)
 readonly LOCAL_USER=$(whoami)
 readonly REMOTE_HOME="/tmp/panssh-home.$LOCAL_USER.$LOCAL_HOST"
-readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME/.cache\""
+readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME/.cache\" WP_CLI_CACHE_DIR=\"XDG_CACHE_HOME/wp-cli\""
 
 readonly SSH_OPTIONS=" \
   -o ConnectTimeout=30 \

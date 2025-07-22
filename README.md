@@ -1,8 +1,9 @@
-# 🖥️ PanSSH – Pantheon Interactive SSH Session Emulator
+# 🖥️ PanSSH
+## An emulated SSH login for Pantheon sites
 
 PanSSH emulates an interactive SSH connection to a Pantheon site's application environment using only their available (limited) SSH service. It provides command history, local editing of remote files and an emulated current working directory.
 
-You can do almost everything that you could if a standard SSH login were available, and it looks and feels near identical.
+You can do almost everything that you could if a standard SSH login were available, and it looks and feels so familiar that you may not notice the difference.
 
 ### Quick start
 
