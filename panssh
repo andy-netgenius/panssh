@@ -41,6 +41,7 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load SITE_IDs from config ---
 if [[ ! -f "$SITES_FILE" ]]; then
+    echo -e "\n$PANSSH_VERSION"
     echo -e "\n🟡 Sites file not found at: $SITES_FILE"
     echo -e "\nTo create it, run:"
     [[ "$LANDO" == "ON" ]] && echo -e "  lando ssh"
@@ -50,12 +51,13 @@ fi
 
 # Parse command-line, get site.env argument.
 if [[ ! "$1" =~ ^([a-zA-Z0-9\-]+)\.([a-zA-Z0-9\-]+)$ ]]; then
+    [[ "$0" == "./panssh" ]] && panssh="$0" || panssh="panssh"
     echo -e "\n$PANSSH_VERSION"
     echo -e "\nUsage examples:\n"
-    echo -e "  panssh site.env"
-    echo -e "  panssh site.env \"commands\""
-    echo -e "  panssh site.env < script.sh"
-    echo -e "  echo \"commands\" | panssh site.env"
+    echo -e "  $panssh site.env"
+    echo -e "  $panssh site.env \"commands\""
+    echo -e "  $panssh site.env < script.sh"
+    echo -e "  echo \"commands\" | $panssh site.env"
     echo -e "\nSpecial commands:\n"
     echo -e "  View a file: .vw <filepath>"
     echo -e "  Edit a file: .ed <filepath>"
