@@ -114,7 +114,7 @@ cleanup() {
     local status=$?
     history -a
     ssh -O exit $SSH_OPTIONS "$USER@$HOST" 2>/dev/null
-    rm -r "$TEMP_DIR" #> /dev/null 2>&1
+    rm -r "$TEMP_DIR"
     echo -e "\nConnection to $SITE_NAME.$ENV_ID closed." >&2
     exit $status
 }
@@ -134,12 +134,12 @@ fi
 
 # --- File transfer between local and host ---
 transfer_file() {
-    # For some reason, scp fails under Lando, reason unknown.
+    # Standard scp fails under Lando, reason unknown.
     # Until resolved, we use rsync as a workaround.
     if [[ $LANDO != "ON" ]]; then
-    scp -q $SSH_OPTIONS "$1" "$2"
+        scp -q $SSH_OPTIONS "$1" "$2"
     else
-      rsync -qe "ssh $SSH_OPTIONS" $1 $2
+        rsync -qe "ssh $SSH_OPTIONS" "$1" "$2"
     fi
     return $?
 }
@@ -186,7 +186,7 @@ edit_file() {
         elif [[ "$action" == "ed" ]] && ! ssh_exec "[ -w \"$remote_path\" ]"; then
             echo "🚫 File is not writable."
         else
-            can_edit=1  
+            can_edit=1
             download_needed=1
         fi
     elif [[ "$action" == "ed" ]]; then
@@ -197,7 +197,7 @@ edit_file() {
         elif ! ssh_exec "[ -w \"$dirname\" ]"; then
             echo "🚫 Directory is not writable."
         else
-            can_edit=1  
+            can_edit=1
         fi
     else
         echo "🚫 File not found."
