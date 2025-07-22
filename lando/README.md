@@ -11,7 +11,7 @@ This file is an optional part of the [PanSSH](https://github.com/LastCallMedia/p
 1. Either clone the [PanSSH repository](https://github.com/LastCallMedia/panssh) or download `.lando.panssh.yml` directly:
 
 ```
-curl -so .lando.panssh.yml https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/panssh/lando/.lando.panssh.yml
+curl -so .lando.panssh.yml https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/lando/.lando.panssh.yml
 ```
 2. Place `.lando.panssh.yml` in the same location as your application's `.lando.yml` file.
 

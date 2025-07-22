@@ -4,8 +4,19 @@ PanSSH emulates an interactive SSH connection to a Pantheon site's application e
 
 You can do almost everything that you could if a standard SSH login were available, and it looks and feels near identical.
 
+### Quick start
+
+##### Download and run the main script
+
+```
+curl -so panssh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/panssh
+chmod +x panssh
+./panssh
+```
+Further instructions will then be displayed.
+
 ### Recent changes
-* 1.2.1: Added `.lando.panssh.yml`, which provides easy setup of PanSSH in a [Lando](https://lando.dev/) project.
+* 1.2.1: Added [.lando.panssh.yml](https://github.com/LastCallMedia/panssh/blob/lando/lando/.lando.panssh.yml), which provides [easy setup](https://github.com/LastCallMedia/panssh/blob/lando/lando/README.md) of PanSSH in a [Lando](https://lando.dev/) project.
 * 1.2.0: Tab-completion is now included, on supporting systems:
   * Local site and environment names.
   * Remote directory and file names.
@@ -67,22 +78,19 @@ echo "commands" | panssh site.env
 
 ### No installation
 
-Either clone the [PanSSH repository](https://github.com/LastCallMedia/panssh) or download the individual files:
+The only required file is the `panssh` script.
 
-The main script:
+##### Download just the main script
+
 ```
 curl -so panssh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/panssh
 ```
-
-Optionally, to support tab-completion:
-```
-curl -so readx.source.sh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/readx.source.sh
-```
-
-* Mark the main script as executable: `chmod +x panssh`
+* Mark the script as executable: `chmod +x panssh`
 * Run it as just `./panssh` to see further instructions.
 
 ### Minimal installation
+
+Clone the [PanSSH repository](https://github.com/LastCallMedia/panssh) or download and unzip the [zip archive](https://github.com/LastCallMedia/panssh/archive/refs/heads/lando.zip).
 
 Mark the main `panssh` script as executable, then copy or move it to any suitable directory that's included in your PATH.
 
