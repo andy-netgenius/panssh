@@ -71,12 +71,12 @@ Either clone the [PanSSH repository](https://github.com/LastCallMedia/panssh) or
 
 The main script:
 ```
-curl -so panssh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/tags/latest/panssh
+curl -so panssh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/panssh
 ```
 
 Optionally, to support tab-completion:
 ```
-curl -so readx.source.sh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/tags/latest/readx.source.sh
+curl -so readx.source.sh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/readx.source.sh
 ```
 
 * Mark the main script as executable: `chmod +x panssh`
