@@ -89,23 +89,29 @@ ssh_exec() {
     # Don't add anything here without saving and returning correct status.
 }
 
-# --- SSH wrapper with current directory tracking ---
+# --- SSH wrapper with syntax check, status and current directory tracking ---
 ssh_exec_track() {
-    local cmd="$1"
     local cwd_marker="PANSSH_status_cwd:"
-    local line
+
+    # Build command parts.
+    local pre_cmd="$1"
+    local cmd="$2"
+    local clean_cmd="${cmd%;}"
+    local post_cmd="echo \"$cwd_marker\$?|\$(pwd)\""
 
     # Run the command and print its output until we hit our marker.
+    local line
     while IFS= read -r line && [[ "$line" != "$cwd_marker"* ]]; do
         echo "$line"
     done < <(
-        ssh_exec "$cmd; echo \"$cwd_marker\$?|\$(pwd)\""
+        # Run syntax check first, then full command if syntax is valid.
+        ssh_exec "bash -n -c '$cmd' && bash -c '$pre_cmd; $clean_cmd; $post_cmd'"
     )
 
     # Extract status code and working directory from the final line.
     local status_cwd="${line#"$cwd_marker"}"
 
-    # Check for failure - can happen due to syntax error, etc.
+    # Check for failure - can happen due to syntax error (status 2), etc.
     if [[ -z "$status_cwd" ]]; then
         return 2
     fi
@@ -373,7 +379,7 @@ while true; do
     fi
 
     # Run the command with our environment, current directory and correct initial value for $?
-    ssh_exec_track "export $REMOTE_ENV; cd \"$current_dir\" && bash -c \"exit $current_status\"; $cmd"
+    ssh_exec_track "export $REMOTE_ENV; cd \"$current_dir\" && bash -c \"exit $current_status\"" "$cmd"
     current_status=$?
 
     # Check whether the command changed the current directory.
