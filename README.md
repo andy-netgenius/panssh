@@ -108,7 +108,7 @@ Copy the `panssh` completion script from `bash-completion/` to the `bash-complet
 * For recent Ubuntu distributions, you can probably use `/usr/local/share/bash-completion/completions/`
 * For MacOS, maybe `/opt/homebrew/etc/bash_completion.d/` or `usr/local/etc/bash_completion.d`, depending on your system.
 
-Test tab-completion by entering `panssh ` then pressing the tab key.
+Test tab-completion by entering `panssh ` then pressing the tab key (create a sites configuration file first).
 
 ### Optional: tab-completion of remote directory and file names
 

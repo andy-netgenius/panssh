@@ -85,30 +85,34 @@ readonly HOST="appserver.$ENV_ID.$SITE_ID.drush.in"
 # --- SSH wrapper ---
 ssh_exec() {
     local cmd=$(printf '%q' "$1")
-    ssh $SSH_OPTIONS "$USER@$HOST" "echo $cmd | bash; exit \${PIPESTATUS[1]}"
-    return $?
+    ssh $SSH_OPTIONS "$USER@$HOST" "echo $cmd | bash"
+    # Don't add anything here without saving and returning correct status.
 }
 
 # --- SSH wrapper with current directory tracking ---
 ssh_exec_track() {
     local cmd="$1"
-    local marker="___PANSSH_CWD___"
-    local status=0
+    local cwd_marker="PANSSH_status_cwd:"
+    local line
 
-    while IFS= read -r line; do
-        if [[ "$line" == "$marker "* ]]; then
-            local meta="${line#"$marker "}"
-            status="${meta%%,*}"
-            current_dir="${meta#*,}"
-        else
-            echo "$line"
-        fi
+    # Run the command and print its output until we hit our marker.
+    while IFS= read -r line && [[ "$line" != "$cwd_marker"* ]]; do
+        echo "$line"
     done < <(
-        ssh $SSH_OPTIONS "$USER@$HOST" \
-            "echo $(printf '%q' "$cmd; echo $marker \$?,\$(pwd)") | bash"
+        ssh_exec "$cmd; echo \"$cwd_marker\$?|\$(pwd)\""
     )
 
-    return "$status"
+    # Extract status code and working directory from the final line.
+    local status_cwd="${line#"$cwd_marker"}"
+
+    # Check for failure - can happen due to syntax error, etc.
+    if [[ -z "$status_cwd" ]]; then
+        return 2
+    fi
+
+    # Set remote directory and return status code.
+    REMOTE_CWD="${status_cwd#*|}"
+    return "${status_cwd%%|*}"
 }
 
 # --- Clean up and close SSH connection ---
@@ -130,7 +134,7 @@ if [[ $# -gt 1 ]] || ! [ -t 0 ]; then
     else
         cmd=$(cat)
     fi
-    ssh_exec "export $REMOTE_ENV; $cmd"
+    ssh_exec "$REMOTE_ENV; $cmd"
     exit $?
 fi
 
@@ -296,9 +300,10 @@ export HISTCONTROL=ignorespace:ignoredups:erasedups
 history -r
 
 # Set up initial state.
-auto_ls=0
+REMOTE_CWD="/code"
+current_dir="$REMOTE_CWD"
 current_status=0
-current_dir="/code"
+auto_ls=0
 
 # Basic environment checks.
 if ssh_exec "cd $current_dir"; then
@@ -341,7 +346,10 @@ while true; do
     [[ -z "$cmd" ]] && continue
 
     # Handle `exit`.
-    [[ "$cmd" == "exit" ]] && break
+    if [[ "$cmd" =~ ^exit([[:space:]]+(.*))?$ ]]; then
+        current_status="${BASH_REMATCH[2]:-0}"
+        break;
+    fi
 
     # Handle `.ed` (edit) and `.vw` (view)
     if [[ "$cmd" =~ ^\.(ed|vw)[[:space:]]+([^[:space:]]+)(.*)$ ]]; then
@@ -364,15 +372,18 @@ while true; do
         continue
     fi
 
-    # Run the command with our environment and correct directory.
-    current_dir_before="$current_dir"
-    ssh_exec_track "export $REMOTE_ENV; cd \"$current_dir\" && $cmd"
+    # Run the command with our environment, current directory and correct initial value for $?
+    ssh_exec_track "export $REMOTE_ENV; cd \"$current_dir\" && bash -c \"exit $current_status\"; $cmd"
     current_status=$?
 
-    # Automatic directory listing if enabled and directory was changed.
-    if [[ "$auto_ls" -eq 1 ]] \
-    && [[ "$current_dir" != "$current_dir_before" ]]; then
-        ssh_exec "cd \"$current_dir\" && ls -pC --group-directories-first"
+    # Check whether the command changed the current directory.
+    if [[ -n "$REMOTE_CWD"  &&  "$REMOTE_CWD" != "$current_dir" ]]; then
+        current_dir="$REMOTE_CWD"
+
+        # Automatic directory listing if enabled.
+        if [[ "$auto_ls" -eq 1 ]]; then
+            ssh_exec "cd \"$current_dir\" && ls -pC --group-directories-first"
+        fi
     fi
 
 done
