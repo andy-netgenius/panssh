@@ -17,7 +17,9 @@ chmod +x panssh
 Further instructions will then be displayed.
 
 ### Recent changes
-* 1.2.1: Added [.lando.panssh.yml](https://github.com/LastCallMedia/panssh/blob/lando/lando/.lando.panssh.yml), which provides [easy setup](https://github.com/LastCallMedia/panssh/blob/lando/lando/README.md) of PanSSH in a [Lando](https://lando.dev/) project.
+* 1.2.1:
+  * Added [.lando.panssh.yml](https://github.com/LastCallMedia/panssh/blob/lando/lando/.lando.panssh.yml), which provides [easy setup](https://github.com/LastCallMedia/panssh/blob/lando/lando/README.md) of PanSSH in a [Lando](https://lando.dev/) project.
+  * Improved handling of syntax errors in bash commands.
 * 1.2.0: Tab-completion is now included, on supporting systems:
   * Local site and environment names.
   * Remote directory and file names.
