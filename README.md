@@ -10,7 +10,7 @@ You can do almost everything that you could if a standard SSH login were availab
 ##### Download and run the main script
 
 ```
-curl -so panssh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/panssh
+curl -so panssh https://raw.githubusercontent.com/andy-netgenius/panssh/refs/heads/main/panssh
 chmod +x panssh
 ./panssh
 ```
@@ -18,7 +18,7 @@ Further instructions will then be displayed.
 
 ### Recent changes
 * 1.2.1:
-  * Added [.lando.panssh.yml](https://github.com/LastCallMedia/panssh/blob/lando/lando/.lando.panssh.yml), which provides [easy setup](https://github.com/LastCallMedia/panssh/blob/lando/lando/README.md) of PanSSH in a [Lando](https://lando.dev/) project.
+  * Added [.lando.panssh.yml](https://github.com/andy-netgenius/panssh/blob/main/lando/.lando.panssh.yml), which provides [easy setup](https://github.com/andy-netgenius/panssh/blob/main/lando/README.md) of PanSSH in a [Lando](https://lando.dev/) project.
   * Improved handling of syntax errors in bash commands.
 * 1.2.0: Tab-completion is now included, on supporting systems:
   * Local site and environment names.
@@ -86,14 +86,14 @@ The only required file is the `panssh` script.
 ##### Download just the main script
 
 ```
-curl -so panssh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/panssh
+curl -so panssh https://raw.githubusercontent.com/andy-netgenius/panssh/refs/heads/main/panssh
 ```
 * Mark the script as executable: `chmod +x panssh`
 * Run it as just `./panssh` to see further instructions.
 
 ### Minimal installation
 
-Clone the [PanSSH repository](https://github.com/LastCallMedia/panssh) or download and unzip the [zip archive](https://github.com/LastCallMedia/panssh/archive/refs/heads/lando.zip).
+Clone the [PanSSH repository](https://github.com/andy-netgenius/panssh) or download and unzip the [zip archive](https://github.com/andy-netgenius/panssh/archive/refs/heads/main.zip).
 
 Mark the main `panssh` script as executable, then copy or move it to any suitable directory that's included in your PATH.
 
@@ -172,7 +172,7 @@ This file maps Pantheon site names to their site IDs, which are used to form SSH
 ## 👤 Author
 
 **Andy Inman**  
-[andy@lastcallmedia.com](mailto:andy@lastcallmedia.com)
+[ainman@netgenius.co.uk](mailto:ainman@netgenius.co.uk)
 
 ---
 
