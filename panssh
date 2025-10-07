@@ -354,18 +354,44 @@ while true; do
     # Handle empty input.
     [[ -z "$cmd" ]] && continue
 
-    # Handle `exit`.
+    # Handle `exit [status]`.
     if [[ "$cmd" =~ ^exit([[:space:]]+(.*))?$ ]]; then
         current_status="${BASH_REMATCH[2]:-0}"
         break;
     fi
 
-    # Handle `.ed` (edit) and `.vw` (view)
-    if [[ "$cmd" =~ ^\.(ed|vw)[[:space:]]+([^[:space:]]+)(.*)$ ]]; then
+    # Handle file operations: `.ed` (edit), `.vw` (view) and `.copy`.
+    if [[ "$cmd" =~ ^\.(ed|vw|copy)[[:space:]]+(.+)$ ]]; then
         action="${BASH_REMATCH[1]}"
-        file_path="${BASH_REMATCH[2]}"
-        read -ra editor_args <<< "${BASH_REMATCH[3]}"
-        edit_file "$action" "$file_path" "${editor_args[@]}"
+        read -ra args <<< "${BASH_REMATCH[2]}"
+
+        if [[ "$action" == "copy" ]]; then
+            for i in "${!args[@]}"; do
+                # Process a local path (prefixed with 'local:').
+                if [[ "${args[$i]}" == local:* ]]; then
+                    args[$i]="${args[$i]#local:}"
+                else
+                    # Process remote path.
+                    path="${args[$i]}"
+                    # Prepend $current_dir if path is not absolute.
+                    [[ "$path" != /* ]] && path="${current_dir}/${path}"
+                    # Prepend user@host.
+                    args[$i]="${USER}@${HOST}:${path}"
+                fi
+            done
+
+            # Last argument is the target (file or directory).
+            target="${args[-1]}"
+            unset 'args[-1]'
+
+            # Copy using rsync.
+            rsync -avp -e "ssh $SSH_OPTIONS" "${args[@]}" "$target"
+        else
+            # Handle edit and view.
+            file_path="${args[0]}"
+            edit_file "$action" "$file_path" "${args[@]:1}"
+        fi
+
         continue
     fi
 
@@ -390,7 +416,7 @@ while true; do
         current_dir="$REMOTE_CWD"
 
         # Automatic directory listing if enabled.
-        if [[ "$auto_ls" -eq 1 ]]; then
+        if (( auto_ls == 1 )); then
             ssh_exec "cd \"$current_dir\" && ls -pC --group-directories-first"
         fi
     fi
