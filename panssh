@@ -6,9 +6,12 @@
 # Emulates an interactive ssh connection to a Pantheon site's application
 # environment.
 #
-# Author: Andy Inman - andy@lastcallmedia.com
-# Copyright (c) 2025 Last Call Media
+# Author: Andy Inman - ainman@netgenius.co.uk
+# Copyright (c) 2025 Andrew Inman.
+# Portions Copyright (c) 2025 Last Call Media.
+#
 # License: MIT
+# SPDX-License-Identifier: MIT
 ###############################################################################
 
 readonly PANSSH_VERSION="PanSSH 1.2.1"
