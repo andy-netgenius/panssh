@@ -52,6 +52,18 @@ if [[ ! -f "$SITES_FILE" ]]; then
     exit 1
 fi
 
+# List all built-in commands.
+show_commands() {
+    echo -e "\nBuilt-in commands:\n" >&2
+    echo -e "  Show this command list:  .help" >&2
+    echo -e "  View a file:  .view <filepath>" >&2
+    echo -e "  Edit a file:  .edit <filepath>" >&2
+    echo -e "  Copy directories/files:  .copy [local:]<source> [local:]<target>" >&2
+    echo -e "  Run rsync:  .rsync [options] [local:]<source> [local:]<target>" >&2
+    echo -e "  Toggle automatic directory listing:  .ls" >&2
+    echo -e "\n  Short versions:  .hp .vw .ed .cp .rs .ls\n" >&2
+}
+
 # Parse command-line, get site.env argument.
 if [[ ! "$1" =~ ^([a-zA-Z0-9\-]+)\.([a-zA-Z0-9\-]+)$ ]]; then
     [[ "$0" == "./panssh" ]] && panssh="$0" || panssh="panssh"
@@ -61,10 +73,7 @@ if [[ ! "$1" =~ ^([a-zA-Z0-9\-]+)\.([a-zA-Z0-9\-]+)$ ]]; then
     echo -e "  $panssh site.env \"commands\"" >&2
     echo -e "  $panssh site.env < script.sh" >&2
     echo -e "  echo \"commands\" | $panssh site.env" >&2
-    echo -e "\nSpecial commands:\n" >&2
-    echo -e "  View a file: .vw <filepath>" >&2
-    echo -e "  Edit a file: .ed <filepath>" >&2
-    echo -e "  Toggle automatic directory listing: .ls\n" >&2
+    show_commands
     echo -e "To create or update your available sites configuration, run:" >&2
     [[ "$LANDO" == "ON" ]] && echo -e "  lando ssh" >&2
     echo -e "  terminus site:list --format=csv --fields=name,id > $SITES_FILE\n" >&2
@@ -185,7 +194,7 @@ launch_editor() {
 
 # --- Edit or view a remote file ---
 edit_file() {
-    local action="$1"
+    local action="$1" # "edit" or "view".
     local remote_path="$2"
     shift 2
     local editor_args=("$@")
@@ -193,39 +202,43 @@ edit_file() {
     # Resolve remote path.
     remote_path=$(ssh_exec "export $REMOTE_ENV; cd \"$current_dir\" && eval realpath \"$remote_path\"")
 
-    local can_edit=0
+    local can_access=0
     local download_needed=0
 
-    if ssh_exec "[ -e \"$remote_path\" ]"; then
-        # Path exists - check what's there.
-        if ssh_exec "[ -d \"$remote_path\" ]"; then
+    if ssh_exec "[[ -e \"$remote_path\" ]]"; then
+        # Path exists, check if it's a file and is accessible.
+        download_needed=1
+        if ssh_exec "[[ -d \"$remote_path\" ]]"; then
             echo "🟡 Path is a directory." >&2
-        elif ! ssh_exec "[ -f \"$remote_path\" ]"; then
+        elif ! ssh_exec "[[ -f \"$remote_path\" ]]"; then
             echo "🟡 Not a regular file." >&2
-        elif ! ssh_exec "[ -r \"$remote_path\" ]"; then
+        elif ! ssh_exec "[[ -r \"$remote_path\" ]]"; then
             echo "🚫 File is not readable." >&2
-        elif [[ "$action" == "ed" ]] && ! ssh_exec "[ -w \"$remote_path\" ]"; then
-            echo "🚫 File is not writable." >&2
+        elif [[ "$action" == "edit" ]] && ! ssh_exec "[[ -w \"$remote_path\" ]]"; then
+            read -rp "🚫 File is not writable. View it instead? [y] " >&2 response
+            if [[ -z "$response" || "$response" =~ ^[yY]$ ]]; then
+                can_access=1
+                action="view"
+            fi
         else
-            can_edit=1
-            download_needed=1
+            can_access=1
         fi
-    elif [[ "$action" == "ed" ]]; then
+    elif [[ "$action" == "edit" ]]; then
         # No existing file - check we can create it.
         local dirname=$(dirname "$remote_path")
-        if ! ssh_exec "[ -d \"$dirname\" ]"; then
+        if ! ssh_exec "[[ -d \"$dirname\" ]]"; then
             echo "🚫 Directory not found." >&2
-        elif ! ssh_exec "[ -w \"$dirname\" ]"; then
+        elif ! ssh_exec "[[ -w \"$dirname\" ]]"; then
             echo "🚫 Directory is not writable." >&2
         else
-            can_edit=1
+            can_access=1
         fi
     else
         echo "🚫 File not found." >&2
     fi
 
     # Return now if we can't edit the requested file.
-    (( can_edit == 1 )) || return 1
+    (( can_access == 1 )) || return 1
 
     # Create a temporary file for local editing.
     local filename=$(basename "$remote_path")
@@ -245,7 +258,7 @@ edit_file() {
     # Run editor
     if launch_editor "$local_file" "${editor_args[@]}"; then
         # In edit mode, was a file either downloaded or created?
-        if [[ "$action" == "ed" ]] && [[ -f $local_file ]]; then
+        if [[ "$action" == "edit" ]] && [[ -f $local_file ]]; then
             # Get new checksum.
             local sum_after=$(shasum "$local_file" | awk '{print $1}')
             # If the file has changed, upload it to remote.
@@ -259,6 +272,57 @@ edit_file() {
 
     [[ -f "$local_file" ]] && rm "$local_file"
     return 0
+}
+
+# --- Resolve path as either local or remote ---
+resolve_path() {
+    local path="$1"
+
+    if [[ "$path" == local:* ]]; then
+        # Local path, strip prefix
+        # Expand ~ and relative paths
+        path="${path#local:}"
+        echo "$(realpath -m "$path")"
+    else
+        # Remote path, prepend current_dir if relative
+        [[ "$path" != /* ]] && path="${current_dir}/${path}"
+        echo "${USER}@${HOST}:${path}"
+    fi
+}
+
+# --- Handle the .rsync command ---
+handle_rsync() {
+    local -n cmd_args=$1
+    local rsync_opts=()
+    local paths=()
+
+    # Split rsync options (leading '-') from paths
+    for arg in "${cmd_args[@]}"; do
+        if [[ "$arg" == -* && "${#paths[@]}" -eq 0 ]]; then
+            rsync_opts+=("$arg")
+        else
+            paths+=("$arg")
+        fi
+    done
+
+    # Resolve all paths (support local:)
+    for i in "${!paths[@]}"; do
+        paths[$i]=$(resolve_path "${paths[$i]}")
+    done
+
+    # Last argument is target
+    local target="${paths[-1]}"
+    unset 'paths[-1]'
+
+    # Run rsync
+    rsync -e "ssh $SSH_OPTIONS" "${rsync_opts[@]}" "${paths[@]}" "$target"
+}
+
+# --- Handle the .copy command ---
+handle_copy() {
+    local -n cmd_args=$1
+    local args_with_opts=(-avP "${cmd_args[@]}")
+    handle_rsync args_with_opts
 }
 
 # -------- Interactive operation --------
@@ -363,39 +427,41 @@ while true; do
         break;
     fi
 
-    # Handle file operations: `.ed` (edit), `.vw` (view) and `.copy`.
-    if [[ "$cmd" =~ ^\.(ed|vw|copy)[[:space:]]+(.+)$ ]]; then
+    # Handle built-in commands.
+    if [[ "$cmd" =~ ^\.([[:alnum:]_]+)([[:space:]]+(.+))?$ ]]; then
         action="${BASH_REMATCH[1]}"
-        read -ra args <<< "${BASH_REMATCH[2]}"
 
-        if [[ "$action" == "copy" ]]; then
-            for i in "${!args[@]}"; do
-                # Process a local path (prefixed with 'local:').
-                if [[ "${args[$i]}" == local:* ]]; then
-                    args[$i]="${args[$i]#local:}"
-                else
-                    # Process remote path.
-                    path="${args[$i]}"
-                    # Prepend $current_dir if path is not absolute.
-                    [[ "$path" != /* ]] && path="${current_dir}/${path}"
-                    # Prepend user@host.
-                    args[$i]="${USER}@${HOST}:${path}"
-                fi
-            done
-
-            # Last argument is the target (file or directory).
-            target="${args[-1]}"
-            unset 'args[-1]'
-
-            # Copy using rsync.
-            rsync -avp -e "ssh $SSH_OPTIONS" "${args[@]}" "$target"
+        # Get command arguments (if any).
+        if [[ -n "${BASH_REMATCH[3]}" ]]; then
+            read -ra args <<< "${BASH_REMATCH[3]}"
         else
-            # Handle edit and view.
-            file_path="${args[0]}"
-            edit_file "$action" "$file_path" "${args[@]:1}"
+            args=()  # no arguments
         fi
 
-        continue
+        case "$action" in
+            help|hp)
+                show_commands
+                continue
+                ;;
+            edit|ed)
+                file_path="${args[0]}"
+                edit_file "edit" "$file_path" "${args[@]:1}"
+                continue
+                ;;
+            view|vw)
+                file_path="${args[0]}"
+                edit_file "view" "$file_path" "${args[@]:1}"
+                continue
+                ;;
+            copy|cp)
+                handle_copy args
+                continue
+                ;;
+            rsync|rs)
+                handle_rsync args
+                continue
+                ;;
+        esac
     fi
 
     # Handle toggling of auto-ls feature.
@@ -411,6 +477,7 @@ while true; do
         continue
     fi
 
+    # Execute a remote command:
     # Run the command with our environment, current directory and correct initial value for $?
     ssh_exec_track "export $REMOTE_ENV; cd \"$current_dir\" && bash -c \"exit $current_status\"" "$cmd"
     current_status=$?
