@@ -44,30 +44,30 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load SITE_IDs from config ---
 if [[ ! -f "$SITES_FILE" ]]; then
-    echo -e "\n$PANSSH_VERSION"
-    echo -e "\n🟡 Sites file not found at: $SITES_FILE"
-    echo -e "\nTo create it, run:"
-    [[ "$LANDO" == "ON" ]] && echo -e "  lando ssh"
-    echo -e "  terminus site:list --format=csv --fields=name,id > $SITES_FILE\n"
+    echo -e "\n$PANSSH_VERSION" >&2
+    echo -e "\n🟡 Sites file not found at: $SITES_FILE" >&2
+    echo -e "\nTo create it, run:" >&2
+    [[ "$LANDO" == "ON" ]] && echo -e "  lando ssh" >&2
+    echo -e "  terminus site:list --format=csv --fields=name,id > $SITES_FILE\n" >&2
     exit 1
 fi
 
 # Parse command-line, get site.env argument.
 if [[ ! "$1" =~ ^([a-zA-Z0-9\-]+)\.([a-zA-Z0-9\-]+)$ ]]; then
     [[ "$0" == "./panssh" ]] && panssh="$0" || panssh="panssh"
-    echo -e "\n$PANSSH_VERSION"
-    echo -e "\nUsage examples:\n"
-    echo -e "  $panssh site.env"
-    echo -e "  $panssh site.env \"commands\""
-    echo -e "  $panssh site.env < script.sh"
-    echo -e "  echo \"commands\" | $panssh site.env"
-    echo -e "\nSpecial commands:\n"
-    echo -e "  View a file: .vw <filepath>"
-    echo -e "  Edit a file: .ed <filepath>"
-    echo -e "  Toggle automatic directory listing: .ls\n"
-    echo -e "To create or update your available sites configuration, run:"
-    [[ "$LANDO" == "ON" ]] && echo -e "  lando ssh"
-    echo -e "  terminus site:list --format=csv --fields=name,id > $SITES_FILE\n"
+    echo -e "\n$PANSSH_VERSION" >&2
+    echo -e "\nUsage examples:\n" >&2
+    echo -e "  $panssh site.env" >&2
+    echo -e "  $panssh site.env \"commands\"" >&2
+    echo -e "  $panssh site.env < script.sh" >&2
+    echo -e "  echo \"commands\" | $panssh site.env" >&2
+    echo -e "\nSpecial commands:\n" >&2
+    echo -e "  View a file: .vw <filepath>" >&2
+    echo -e "  Edit a file: .ed <filepath>" >&2
+    echo -e "  Toggle automatic directory listing: .ls\n" >&2
+    echo -e "To create or update your available sites configuration, run:" >&2
+    [[ "$LANDO" == "ON" ]] && echo -e "  lando ssh" >&2
+    echo -e "  terminus site:list --format=csv --fields=name,id > $SITES_FILE\n" >&2
 
     exit 1
 fi
@@ -124,13 +124,19 @@ ssh_exec_track() {
     return "${status_cwd%%|*}"
 }
 
-# --- Clean up and close SSH connection ---
+# --- Close SSH connection and clean up ---
 cleanup() {
     local status=$?
+
+    if ssh -O check $SSH_OPTIONS "$USER@$HOST" 2>/dev/null; then
+        ssh -O exit $SSH_OPTIONS "$USER@$HOST" 2>/dev/null
+        echo -e "\nConnection to $SITE_NAME.$ENV_ID closed." >&2
+    elif [[ -S "$TEMP_DIR/ssh.socket" ]]; then
+        echo -e "\nConnection to $SITE_NAME.$ENV_ID was already closed." >&2
+    fi
+
     history -a
-    ssh -O exit $SSH_OPTIONS "$USER@$HOST" 2>/dev/null
     rm -r "$TEMP_DIR"
-    echo -e "\nConnection to $SITE_NAME.$ENV_ID closed." >&2
     exit $status
 }
 trap cleanup EXIT
@@ -172,7 +178,7 @@ launch_editor() {
     elif command -v vim >/dev/null 2>&1; then
         vim "${editor_args[@]}" "$file"
     else
-        echo "❌ No editor found. Set \$EDITOR or install nano or vim."
+        echo "❌ No editor found. Set \$EDITOR or install nano or vim." >&2
         return 1
     fi
 }
@@ -193,13 +199,13 @@ edit_file() {
     if ssh_exec "[ -e \"$remote_path\" ]"; then
         # Path exists - check what's there.
         if ssh_exec "[ -d \"$remote_path\" ]"; then
-            echo "🟡 Path is a directory."
+            echo "🟡 Path is a directory." >&2
         elif ! ssh_exec "[ -f \"$remote_path\" ]"; then
-            echo "🟡 Not a regular file."
+            echo "🟡 Not a regular file." >&2
         elif ! ssh_exec "[ -r \"$remote_path\" ]"; then
-            echo "🚫 File is not readable."
+            echo "🚫 File is not readable." >&2
         elif [[ "$action" == "ed" ]] && ! ssh_exec "[ -w \"$remote_path\" ]"; then
-            echo "🚫 File is not writable."
+            echo "🚫 File is not writable." >&2
         else
             can_edit=1
             download_needed=1
@@ -208,14 +214,14 @@ edit_file() {
         # No existing file - check we can create it.
         local dirname=$(dirname "$remote_path")
         if ! ssh_exec "[ -d \"$dirname\" ]"; then
-            echo "🚫 Directory not found."
+            echo "🚫 Directory not found." >&2
         elif ! ssh_exec "[ -w \"$dirname\" ]"; then
-            echo "🚫 Directory is not writable."
+            echo "🚫 Directory is not writable." >&2
         else
             can_edit=1
         fi
     else
-        echo "🚫 File not found."
+        echo "🚫 File not found." >&2
     fi
 
     # Return now if we can't edit the requested file.
@@ -228,7 +234,7 @@ edit_file() {
     # Download the file, if needed.
     if (( download_needed == 1 )); then
         if ! transfer_file "$USER@$HOST:$remote_path" "$local_file"; then
-            echo "❌ Failed to download file."
+            echo "❌ Failed to download file." >&2
             [[ -f "$local_file" ]] && rm "$local_file"
             return 1
         fi
@@ -246,7 +252,7 @@ edit_file() {
             if [[ "$sum_after" != "$sum_before" ]]; then
                 transfer_file "$local_file" "$USER@$HOST:$remote_path"
             else
-                echo "🟡 File has not changed."
+                echo "🟡 File has not changed." >&2
             fi
         fi
     fi
@@ -259,11 +265,11 @@ edit_file() {
 
 # First, check that we can connect successfully.
 ssh_exec "exit" || exit $?
-echo -e "\n$PANSSH_VERSION: Connected to $SITE_NAME.$ENV_ID\n"
+echo -e "\n$PANSSH_VERSION: Connected to $SITE_NAME.$ENV_ID\n" >&2
 
 # Check for Bash version 4+.
 if ! ( [[ $BASH_VERSION =~ ^([0-9]+)\. ]] && (( ${BASH_REMATCH[1]} >= 4 )) ) then
-    echo -e "ℹ️  Tab-completion in PanSSH requires Bash 4+\n"
+    echo -e "ℹ️  Tab-completion in PanSSH requires Bash 4+\n" >&2
 else
     # Find our readx script.
     READX_PATH="$SCRIPT_DIR/readx.source.sh"
@@ -317,9 +323,9 @@ auto_ls=0
 # Basic environment checks.
 if ssh_exec "cd $current_dir"; then
     if ssh_exec "[ -w $current_dir ]"; then
-        echo -e "🟡 $current_dir directory is writable (SFTP mode)\n"
+        echo -e "🟡 $current_dir directory is writable (SFTP mode)\n" >&2
     else
-        echo -e "🚫 $current_dir directory is read-only (Git mode)\n"
+        echo -e "🚫 $current_dir directory is read-only (Git mode)\n" >&2
     fi
 fi
 
@@ -327,7 +333,7 @@ fi
 ssh_exec "mkdir -p \"$REMOTE_HOME\""
 
 # --- Main loop ---
-trap 'interrupted=1' SIGINT
+trap '' SIGINT
 while true; do
     if [[ -n "$READX_PATH" ]]; then
         # readx is available - use it for command input.
@@ -347,9 +353,6 @@ while true; do
         read -e -r -p "${PROMPT/_CWD_/$current_dir}" cmd
         history -s "$cmd"
     fi
-
-    # Handle Ctrl-C etc.
-    (( interrupted == 1 )) && unset interrupted && continue
 
     # Handle empty input.
     [[ -z "$cmd" ]] && continue
@@ -398,10 +401,11 @@ while true; do
     # Handle toggling of auto-ls feature.
     if [[ "$cmd" == ".ls" ]]; then
         if (( auto_ls == 0 )); then
-            echo "✅ Auto-ls enabled"
+            echo "✅ Auto-ls enabled" >&2
             auto_ls=1
+            ssh_exec "cd \"$current_dir\" && ls -pC --group-directories-first"
         else
-            echo "🚫 Auto-ls disabled"
+            echo "🚫 Auto-ls disabled" >&2
             auto_ls=0
         fi
         continue
