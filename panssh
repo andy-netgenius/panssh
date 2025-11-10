@@ -336,13 +336,14 @@ if ! ( [[ $BASH_VERSION =~ ^([0-9]+)\. ]] && (( ${BASH_REMATCH[1]} >= 4 )) ) the
     echo -e "ℹ️  Tab-completion in PanSSH requires Bash 4+\n" >&2
 else
     # Find our readx script.
-    READX_PATH="$SCRIPT_DIR/readx.source.sh"
+    READX="readx.source.sh"
+    READX_PATH="$SCRIPT_DIR/$READX"
     if [[ ! -f "$READX_PATH" ]]; then
-        READX_PATH="$SCRIPT_DIR/../lib/panssh/readx.source.sh"
+        READX_PATH="$SCRIPT_DIR/../lib/panssh/$READX"
     fi
 
     if [[ ! -f "$READX_PATH" ]]; then
-        echo -e "❌ Failed to find readx.source.sh. Tab-completion will not be available.\n" >&2
+        echo -e "ℹ️  Failed to find $READX. Tab-completion will not be available.\n" >&2
         unset READX_PATH
     fi
 fi
@@ -413,8 +414,11 @@ while true; do
         READX_FIRST_TIME=0
     else
         # readx is not available - use `read` for command input.
-        bind '"\t":' 2>/dev/null
-        read -e -r -p "${PROMPT/_CWD_/$current_dir}" cmd
+        cmd=$(
+            trap - SIGINT
+            bind '"\t":' 2>/dev/null
+            read -e -r -p "${PROMPT/_CWD_/$current_dir}" cmd && echo $cmd
+        ) || echo
         history -s "$cmd"
     fi
 
