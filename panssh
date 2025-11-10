@@ -354,19 +354,10 @@ CLR0=$(tput sgr0 2>/dev/null) \
 && CLR2=$(tput setaf 3 2>/dev/null) \
 && CLR3=$(tput setaf 6 2>/dev/null)
 
-# Prompt used with `echo` and `read`.
+# Colour prompt showing site, environment, current directory.
 PROMPT=$( printf "${CLR1}%s${CLR0}.${CLR2}%s${CLR0}:${CLR3}%s${CLR0}\$ " \
     "$SITE_NAME" "$ENV_ID" "_CWD_"
 )
-
-if [[ -n "$READX_PATH" ]]; then
-    # Prompt used with readx (bash command line input).
-    PROMPT_PS1=$( printf \
-        "\[${CLR1}\]%s\[${CLR0}\].\[${CLR2}\]%s\[${CLR0}\]:\[${CLR3}\]%s\[${CLR0}\]\$ " \
-        "$SITE_NAME" "$ENV_ID" "_CWD_"
-    )
-    READX_FIRST_TIME=1
-fi
 
 # Set up command history behaviour.
 export HISTFILE="$STORAGE_DIR/$SITE_NAME.$ENV_ID.history"
@@ -398,8 +389,8 @@ while true; do
         # readx is available - use it for command input.
         export READX_EXEC="ssh $SSH_OPTIONS $USER@$HOST 'echo %s | bash'"
         export REMOTE_ENV CWD="$current_dir"
-        export READX_PROMPT="${PROMPT_PS1/_CWD_/$current_dir}"
-        export READX_FIRST_TIME
+        export READX_PROMPT="${PROMPT/_CWD_/$current_dir}"
+        export READX_FIRST_TIME="${READX_FIRST_TIME:-1}"
 
         # Use bash interactive to read command input with completion.
         cmd=$(/usr/bin/env bash --init-file "$READX_PATH")
