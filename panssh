@@ -348,30 +348,24 @@ else
     fi
 fi
 
+# Get local colour settings.
+CLR0=$(tput sgr0 2>/dev/null) \
+&& CLR1=$(tput setaf 1 2>/dev/null) \
+&& CLR2=$(tput setaf 3 2>/dev/null) \
+&& CLR3=$(tput setaf 6 2>/dev/null)
+
+# Prompt used with `echo` and `read`.
+PROMPT=$( printf "${CLR1}%s${CLR0}.${CLR2}%s${CLR0}:${CLR3}%s${CLR0}\$ " \
+    "$SITE_NAME" "$ENV_ID" "_CWD_"
+)
+
 if [[ -n "$READX_PATH" ]]; then
-    READX_FIRST_TIME=1
-
-    # Get local colour settings.
-    CLR0=$(tput sgr0 2>/dev/null) \
-    && CLR1=$(tput setaf 1 2>/dev/null) \
-    && CLR2=$(tput setaf 3 2>/dev/null) \
-    && CLR3=$(tput setaf 6 2>/dev/null)
-
-    # Prompt used with `echo`.
-    PROMPT=$( printf "${CLR1}%s${CLR0}.${CLR2}%s${CLR0}:${CLR3}%s${CLR0}\$ " \
-        "$SITE_NAME" "$ENV_ID" "_CWD_"
-    )
-
     # Prompt used with readx (bash command line input).
     PROMPT_PS1=$( printf \
         "\[${CLR1}\]%s\[${CLR0}\].\[${CLR2}\]%s\[${CLR0}\]:\[${CLR3}\]%s\[${CLR0}\]\$ " \
         "$SITE_NAME" "$ENV_ID" "_CWD_"
     )
-else
-    # Prompt used with `read` (ANSI colour is not supported)
-    PROMPT=$( printf "%s.%s:%s\$ " \
-        "$SITE_NAME" "$ENV_ID" "_CWD_"
-    )
+    READX_FIRST_TIME=1
 fi
 
 # Set up command history behaviour.
