@@ -61,7 +61,7 @@ show_commands() {
     echo -e "  Copy directories/files:  .copy [local:]<source> [local:]<target>" >&2
     echo -e "  Run rsync:  .rsync [options] [local:]<source> [local:]<target>" >&2
     echo -e "  Toggle automatic directory listing:  .ls" >&2
-    echo -e "\n  Short versions:  .hp .vw .ed .cp .rs .ls\n" >&2
+    echo -e "\n  Short versions:  .vw .ed .cp .rs .ls\n" >&2
 }
 
 # Parse command-line, get site.env argument.
@@ -354,19 +354,14 @@ CLR0=$(tput sgr0 2>/dev/null) \
 && CLR2=$(tput setaf 3 2>/dev/null) \
 && CLR3=$(tput setaf 6 2>/dev/null)
 
-# Prompt used with `echo` and `read`.
-PROMPT=$( printf "${CLR1}%s${CLR0}.${CLR2}%s${CLR0}:${CLR3}%s${CLR0}\$ " \
+# Escaped prompt used, with readx (bash command line input).
+PROMPT_PS1=$( printf \
+    "\[${CLR1}\]%s\[${CLR0}\].\[${CLR2}\]%s\[${CLR0}\]:\[${CLR3}\]%s\[${CLR0}\]\$ " \
     "$SITE_NAME" "$ENV_ID" "_CWD_"
 )
 
-if [[ -n "$READX_PATH" ]]; then
-    # Prompt used with readx (bash command line input).
-    PROMPT_PS1=$( printf \
-        "\[${CLR1}\]%s\[${CLR0}\].\[${CLR2}\]%s\[${CLR0}\]:\[${CLR3}\]%s\[${CLR0}\]\$ " \
-        "$SITE_NAME" "$ENV_ID" "_CWD_"
-    )
-    READX_FIRST_TIME=1
-fi
+# Get un-escaped prompt, used with `echo` and `read`.
+tmp=${PROMPT_PS1//\\[/}; PROMPT=${tmp//\\]/}
 
 # Set up command history behaviour.
 export HISTFILE="$STORAGE_DIR/$SITE_NAME.$ENV_ID.history"
@@ -399,11 +394,11 @@ while true; do
         export READX_EXEC="ssh $SSH_OPTIONS $USER@$HOST 'echo %s | bash'"
         export REMOTE_ENV CWD="$current_dir"
         export READX_PROMPT="${PROMPT_PS1/_CWD_/$current_dir}"
-        export READX_FIRST_TIME
+        export READX_FIRST_TIME="${READX_FIRST_TIME:-1}"
 
         # Use bash interactive to read command input with completion.
         cmd=$(/usr/bin/env bash --init-file "$READX_PATH")
-        # Re-display the prompt and input, to match bash interactive.
+        # Re-display both prompt and input, to mimic standard Bash behaviour.
         echo "${PROMPT/_CWD_/$current_dir}$cmd"
         READX_FIRST_TIME=0
     else
@@ -437,7 +432,7 @@ while true; do
         fi
 
         case "$action" in
-            help|hp)
+            help)
                 show_commands
                 continue
                 ;;
