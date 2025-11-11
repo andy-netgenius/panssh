@@ -1,5 +1,5 @@
 # 🖥️ PanSSH
-## An emulated SSH login for Pantheon sites
+## An emulated SSH login for [Pantheon](https://pantheon.io/) sites
 
 PanSSH emulates an interactive SSH connection to a Pantheon site's application environment using only their available (limited) SSH service. It provides command history, local editing of remote files and an emulated current working directory.
 
