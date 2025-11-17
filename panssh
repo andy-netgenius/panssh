@@ -336,7 +336,7 @@ if ! ( [[ $BASH_VERSION =~ ^([0-9]+)\. ]] && (( ${BASH_REMATCH[1]} >= 4 )) ) the
     echo -e "ℹ️  Tab-completion in PanSSH requires Bash 4+\n" >&2
 else
     # Find our readx script.
-    READX="readx.source.sh"
+    readonly READX="readx.source.sh"
     READX_PATH="$SCRIPT_DIR/$READX"
     if [[ ! -f "$READX_PATH" ]]; then
         READX_PATH="$SCRIPT_DIR/../lib/panssh/$READX"
@@ -345,23 +345,26 @@ else
     if [[ ! -f "$READX_PATH" ]]; then
         echo -e "ℹ️  Failed to find $READX. Tab-completion will not be available.\n" >&2
         unset READX_PATH
+    else
+        readonly READX_PATH
     fi
 fi
 
 # Get local colour settings.
-CLR0=$(tput sgr0 2>/dev/null) \
-&& CLR1=$(tput setaf 1 2>/dev/null) \
-&& CLR2=$(tput setaf 3 2>/dev/null) \
-&& CLR3=$(tput setaf 6 2>/dev/null)
+readonly clr0=$(tput sgr0 2>/dev/null) \
+&& readonly clr1=$(tput setaf 1 2>/dev/null) \
+&& readonly clr2=$(tput setaf 3 2>/dev/null) \
+&& readonly clr3=$(tput setaf 6 2>/dev/null)
 
 # Escaped prompt used, with readx (bash command line input).
-PROMPT_PS1=$( printf \
-    "\[${CLR1}\]%s\[${CLR0}\].\[${CLR2}\]%s\[${CLR0}\]:\[${CLR3}\]%s\[${CLR0}\]\$ " \
+readonly prompt_ps1=$( printf \
+    "\[${clr1}\]%s\[${clr0}\].\[${clr2}\]%s\[${clr0}\]:\[${clr3}\]%s\[${clr0}\]\$ " \
     "$SITE_NAME" "$ENV_ID" "_CWD_"
 )
 
 # Get un-escaped prompt, used with `echo` and `read`.
-tmp=${PROMPT_PS1//\\[/}; PROMPT=${tmp//\\]/}
+tmp=${prompt_ps1//\\[/}
+readonly prompt=${tmp//\\]/}
 
 # Set up command history behaviour.
 export HISTFILE="$STORAGE_DIR/$SITE_NAME.$ENV_ID.history"
@@ -393,20 +396,20 @@ while true; do
         # readx is available - use it for command input.
         export READX_EXEC="ssh $SSH_OPTIONS $USER@$HOST 'echo %s | bash'"
         export REMOTE_ENV CWD="$current_dir"
-        export READX_PROMPT="${PROMPT_PS1/_CWD_/$current_dir}"
+        export READX_PROMPT="${prompt_ps1/_CWD_/$current_dir}"
         export READX_FIRST_TIME="${READX_FIRST_TIME:-1}"
 
         # Use bash interactive to read command input with completion.
         cmd=$(/usr/bin/env bash --init-file "$READX_PATH")
         # Re-display both prompt and input, to mimic standard Bash behaviour.
-        echo "${PROMPT/_CWD_/$current_dir}$cmd"
+        echo "${prompt/_CWD_/$current_dir}$cmd"
         READX_FIRST_TIME=0
     else
         # readx is not available - use `read` for command input.
         cmd=$(
             trap - SIGINT
             bind '"\t":' 2>/dev/null
-            read -e -r -p "${PROMPT/_CWD_/$current_dir}" cmd && echo $cmd
+            read -e -r -p "${prompt/_CWD_/$current_dir}" cmd && echo $cmd
         ) || echo
         history -s "$cmd"
     fi
