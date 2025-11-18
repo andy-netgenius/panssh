@@ -18,8 +18,8 @@ Further instructions will then be displayed.
 
 ### Recent changes
 
-* 1.3.0:
-  * Added `.copy` and `.rsync` built-in commands to copy/sync directories to/from the remote site.
+* 1.3.1:
+  * Added `.copy`, `.copyr` and `.rsync` built-in commands to copy/sync directories to/from the remote site.
   * Various minor fixes and improvements.
 * 1.2.1:
   * Added [.lando.panssh.yml](https://github.com/andy-netgenius/panssh/raw/refs/tags/latest/lando/.lando.panssh.yml), which provides [easy setup](https://github.com/andy-netgenius/panssh/raw/refs/tags/latest/lando/README.md) of PanSSH in a [Lando](https://lando.dev/) project.
