@@ -17,6 +17,10 @@ chmod +x panssh
 Further instructions will then be displayed.
 
 ### Recent changes
+
+* 1.3.0:
+  * Added `.copy` and `.rsync` built-in commands to copy/sync directories to/from the remote site.
+  * Various minor fixes and improvements.
 * 1.2.1:
   * Added [.lando.panssh.yml](./blob/latest/lando/.lando.panssh.yml), which provides [easy setup](./blob/latest/lando/README.md) of PanSSH in a [Lando](https://lando.dev/) project.
   * Improved handling of syntax errors in bash commands.
@@ -56,10 +60,37 @@ echo "commands" | panssh site.env
 - Use shell commands in the normal way.
 - Type `exit` to close the interactive session.
 
-### Special
+### Built-in commands
+- `.help` — Display usage information and command list.
+
 - `.vw <filepath>` — View a remote file (download and open in viewer/editor).
 - `.ed <filepath>` — Edit a remote file (download, edit locally, upload).
 - `.ls` — Toggle automatic `ls` after directory change.
+
+- `.copy [local:]<source> [local:]<target>` — Copy files to/from the remote site.
+- `.copyr [local:]<source> [local:]<target>` — Recursively copy directories/files to/from the remote site.
+- `.rsync [options] [local:]<source> [local:]<target>` — Run rsync.
+
+### Copying directories and files to or from the remote site.
+
+* The `.copy` command runs rsync with its `preserve modification times`, `compress` and `progress` options enabled.
+* The `.copyr` command adds rsync's `recursive` option, but is otherwise identical to `.copy`.
+
+* The `.rsync` command runs rsync with only the options you specify.
+  
+All three commands require that either the source or target path be prefixed by `local:` in order to indicate the required transfer direction.
+
+Examples:
+
+To the copy the local file `settings.php` to the remote current directory you could use:
+```
+.copy local:settings.php ./
+```
+
+To recursively copy all files and sub-directories from remote path `web/sites/default/files/` to local path `/tmp/files/` you could use:
+```
+.copyr web/sites/default/files/ local:/tmp/files/
+```
 
 ---
 
@@ -71,8 +102,9 @@ echo "commands" | panssh site.env
 - Bash 4.0+ to support tab-completion of remote directory and file names.
 - Common Linux/Unix utilities.
 - For local file viewing / editing:
-  - A text-based editor such as `nano` or `vim`, or a suitably configured `$EDITOR`.
+  - Either `nano` or `vim` available via $PATH$, or a suitably configured `$EDITOR`.
   - Standard `scp` and `shasum` utilities.
+- For copying files to/from remote: rsync.
 - [Terminus CLI](https://pantheon.io/docs/terminus) (needed only to fetch a list of your accessible sites).
 
 ---

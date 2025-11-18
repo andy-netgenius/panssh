@@ -54,14 +54,15 @@ fi
 
 # List all built-in commands.
 show_commands() {
-    echo -e "\nBuilt-in commands:\n" >&2
+    echo -e "\nInteractive mode built-in commands:\n" >&2
     echo -e "  Show this command list:  .help" >&2
     echo -e "  View a file:  .view <filepath>" >&2
     echo -e "  Edit a file:  .edit <filepath>" >&2
-    echo -e "  Copy directories/files:  .copy [local:]<source> [local:]<target>" >&2
+    echo -e "  Copy files:  .copy [local:]<source> [local:]<target>" >&2
+    echo -e "  Copy files recursively:  .copyr [local:]<source> [local:]<target>" >&2
     echo -e "  Run rsync:  .rsync [options] [local:]<source> [local:]<target>" >&2
     echo -e "  Toggle automatic directory listing:  .ls" >&2
-    echo -e "\n  Short versions:  .vw .ed .cp .rs .ls\n" >&2
+    echo -e "\n  Short versions:  .vw .ed .cp .cr .rs .ls\n" >&2
 }
 
 # Parse command-line, get site.env argument.
@@ -321,7 +322,16 @@ handle_rsync() {
 # --- Handle the .copy command ---
 handle_copy() {
     local -n cmd_args=$1
-    local args_with_opts=(-avP "${cmd_args[@]}")
+    # Use rsync options: compress, progress.
+    local args_with_opts=(-tzP "${cmd_args[@]}")
+    handle_rsync args_with_opts
+}
+
+# --- Handle the .copyr command ---
+handle_copyr() {
+    local -n cmd_args=$1
+    # Use rsync options: archive, compress, progress.
+    local args_with_opts=(-rtzP "${cmd_args[@]}")
     handle_rsync args_with_opts
 }
 
@@ -451,6 +461,10 @@ while true; do
                 ;;
             copy|cp)
                 handle_copy args
+                continue
+                ;;
+            copyr|cr)
+                handle_copyr args
                 continue
                 ;;
             rsync|rs)
