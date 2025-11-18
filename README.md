@@ -7,7 +7,7 @@ You can do almost everything that you could if a standard SSH login were availab
 
 ### Quick start
 
-##### Download and run the main script
+##### Download and run the [main script](https://github.com/andy-netgenius/panssh/raw/refs/tags/latest/panssh)
 
 ```
 curl -so panssh https://github.com/andy-netgenius/panssh/raw/refs/tags/latest/panssh
