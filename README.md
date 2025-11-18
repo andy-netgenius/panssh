@@ -10,7 +10,7 @@ You can do almost everything that you could if a standard SSH login were availab
 ##### Download and run the main script
 
 ```
-curl -so panssh https://raw.githubusercontent.com/andy-netgenius/panssh/refs/heads/main/panssh
+curl -so panssh https://github.com/andy-netgenius/panssh/raw/refs/tags/latest/panssh
 chmod +x panssh
 ./panssh
 ```
@@ -22,7 +22,7 @@ Further instructions will then be displayed.
   * Added `.copy` and `.rsync` built-in commands to copy/sync directories to/from the remote site.
   * Various minor fixes and improvements.
 * 1.2.1:
-  * Added [.lando.panssh.yml](https://github.com/andy-netgenius/panssh/blob/main/lando/.lando.panssh.yml), which provides [easy setup](https://github.com/andy-netgenius/panssh/blob/main/lando/README.md) of PanSSH in a [Lando](https://lando.dev/) project.
+  * Added [.lando.panssh.yml](https://github.com/andy-netgenius/panssh/raw/refs/tags/latest/lando/.lando.panssh.yml), which provides [easy setup](https://github.com/andy-netgenius/panssh/raw/refs/tags/latest/lando/README.md) of PanSSH in a [Lando](https://lando.dev/) project.
   * Improved handling of syntax errors in bash commands.
 * 1.2.0: Tab-completion is now included, on supporting systems:
   * Local site and environment names.
@@ -118,14 +118,14 @@ The only required file is the `panssh` script.
 ##### Download just the main script
 
 ```
-curl -so panssh https://raw.githubusercontent.com/andy-netgenius/panssh/refs/heads/main/panssh
+curl -so panssh https://github.com/andy-netgenius/panssh/raw/refs/tags/latest/panssh
 ```
 * Mark the script as executable: `chmod +x panssh`
 * Run it as just `./panssh` to see further instructions.
 
 ### Minimal installation
 
-Clone the [PanSSH repository](https://github.com/andy-netgenius/panssh) or download and unzip the [zip archive](https://github.com/andy-netgenius/panssh/archive/refs/heads/main.zip).
+Clone the [PanSSH repository](https://github.com/andy-netgenius/panssh) or download and unzip the [zip archive](https://github.com/andy-netgenius/panssh/archive/refs/tags/latest.zip).
 
 Mark the main `panssh` script as executable, then copy or move it to any suitable directory that's included in your PATH.
 
