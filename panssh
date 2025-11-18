@@ -28,6 +28,7 @@ readonly LOCAL_HOST=$(hostname -s)
 readonly LOCAL_USER=$(whoami)
 readonly REMOTE_HOME="/tmp/panssh-home.$LOCAL_USER.$LOCAL_HOST"
 readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME/.cache\" WP_CLI_CACHE_DIR=\"$REMOTE_HOME/.cache/wp-cli\""
+readonly REMOTE_CWD_FILE="$REMOTE_HOME/.panssh-cwd.$$.tmp"
 
 readonly SSH_OPTIONS=" \
   -o ConnectTimeout=30 \
@@ -99,45 +100,42 @@ readonly HOST="appserver.$ENV_ID.$SITE_ID.drush.in"
 ssh_exec() {
     local cmd=$(printf '%q' "$1")
     ssh $SSH_OPTIONS "$USER@$HOST" "echo $cmd | bash"
-    # Don't add anything here without saving and returning correct status.
+    local status=$?
+    return $status
 }
 
 # --- SSH wrapper with syntax check, status and current directory tracking ---
 ssh_exec_track() {
-    local cwd_marker="PANSSH_status_cwd:"
-
     # Build command parts.
-    local pre_cmd="$1"
+    local setup_cmd="$1"
     local cmd="$2"
-    local clean_cmd="${cmd%;}"
-    local post_cmd="echo \"$cwd_marker\$?|\$(pwd)\""
 
-    # Run the command and print its output until we hit our marker.
-    local line
-    while IFS= read -r line && [[ "$line" != "$cwd_marker"* ]]; do
-        echo "$line"
-    done < <(
-        # Run syntax check first, then full command if syntax is valid.
-        ssh_exec "bash -n -c '$cmd' && bash -c '$pre_cmd; $clean_cmd; $post_cmd'"
-    )
+    # Run setup and main commands. Write final cwd to $REMOTE_CWD_FILE file.
+    ssh_exec "
+        $setup_cmd
+        $cmd
+        status=\$?
+        echo \$PWD > $REMOTE_CWD_FILE
+        exit \$status
+    "
+    local status=$?
 
-    # Extract status code and working directory from the final line.
-    local status_cwd="${line#"$cwd_marker"}"
-
-    # Check for failure - can happen due to syntax error (status 2), etc.
-    if [[ -z "$status_cwd" ]]; then
-        return 2
-    fi
-
-    # Set remote directory and return status code.
-    REMOTE_CWD="${status_cwd#*|}"
-    return "${status_cwd%%|*}"
+    # Retrieve the final working directory
+    REMOTE_CWD=$(ssh_exec "
+        if [[ -f $REMOTE_CWD_FILE ]]; then
+            cat $REMOTE_CWD_FILE
+        else
+            echo $REMOTE_CWD
+        fi
+    ")
+    return $status
 }
 
 # --- Close SSH connection and clean up ---
 cleanup() {
     local status=$?
 
+    ssh_exec "[[ -f $REMOTE_CWD_FILE ]] && rm $REMOTE_CWD_FILE"
     if ssh -O check $SSH_OPTIONS "$USER@$HOST" 2>/dev/null; then
         ssh -O exit $SSH_OPTIONS "$USER@$HOST" 2>/dev/null
         echo -e "\nConnection to $SITE_NAME.$ENV_ID closed." >&2
