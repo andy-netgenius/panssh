@@ -14,7 +14,7 @@
 # SPDX-License-Identifier: MIT
 ###############################################################################
 
-readonly PANSSH_VERSION="PanSSH 1.3.0"
+readonly PANSSH_VERSION="PanSSH 1.3.2"
 
 # --- Configuration ---
 readonly SSH_PORT="2222"
@@ -28,6 +28,8 @@ readonly LOCAL_HOST=$(hostname -s)
 readonly LOCAL_USER=$(whoami)
 readonly REMOTE_HOME="/tmp/panssh-home.$LOCAL_USER.$LOCAL_HOST"
 readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME/.cache\" WP_CLI_CACHE_DIR=\"$REMOTE_HOME/.cache/wp-cli\""
+readonly REMOTE_CWD_FILE="$REMOTE_HOME/.panssh-cwd.$$.tmp"
+readonly REMOTE_PID_FILE="$REMOTE_HOME/.panssh-pid.$$.tmp"
 
 readonly SSH_OPTIONS=" \
   -o ConnectTimeout=30 \
@@ -98,60 +100,76 @@ readonly HOST="appserver.$ENV_ID.$SITE_ID.drush.in"
 # --- SSH wrapper ---
 ssh_exec() {
     local cmd=$(printf '%q' "$1")
+    # Running 'echo $cmd | bash' is the only method that works on Pantheon.
     ssh $SSH_OPTIONS "$USER@$HOST" "echo $cmd | bash"
-    # Don't add anything here without saving and returning correct status.
+    local status=$?
+    return $status
 }
 
-# --- SSH wrapper with syntax check, status and current directory tracking ---
+# --- SSH wrapper with setup and tracking, used for interactive mode ---
 ssh_exec_track() {
-    local cwd_marker="PANSSH_status_cwd:"
-
     # Build command parts.
-    local pre_cmd="$1"
+    local setup_cmd="$1"
     local cmd="$2"
-    local clean_cmd="${cmd%;}"
-    local post_cmd="echo \"$cwd_marker\$?|\$(pwd)\""
+    local status="$3"
 
-    # Run the command and print its output until we hit our marker.
-    local line
-    while IFS= read -r line && [[ "$line" != "$cwd_marker"* ]]; do
-        echo "$line"
-    done < <(
-        # Run syntax check first, then full command if syntax is valid.
-        ssh_exec "bash -n -c '$cmd' && bash -c '$pre_cmd; $clean_cmd; $post_cmd'"
-    )
+    # Run setup and main commands. Write PID and CWD to files on remote.
+    ssh_exec "
+        $setup_cmd
+        echo \$\$ > $REMOTE_PID_FILE
+        bash -c \"exit $status\"
+        $cmd
+        status=\$?
+        echo \$PWD > $REMOTE_CWD_FILE
+        exit \$status
+    "
+    status=$?
 
-    # Extract status code and working directory from the final line.
-    local status_cwd="${line#"$cwd_marker"}"
+    # Our SSH process may have been interrupted (e.g. by Ctrl-C),
+    # so we attempt to terminate the remote sub-process anyway.
+    # Then retrieve and output the final working directory.
+    REMOTE_CWD=$(ssh_exec "
+        pid=\$(<$REMOTE_PID_FILE)
+        kill -TERM \$pid 2>/dev/null
 
-    # Check for failure - can happen due to syntax error (status 2), etc.
-    if [[ -z "$status_cwd" ]]; then
-        return 2
-    fi
+        if [[ -f $REMOTE_CWD_FILE ]]; then
+            cat $REMOTE_CWD_FILE
+        else
+            echo $REMOTE_CWD
+        fi
+    ")
 
-    # Set remote directory and return status code.
-    REMOTE_CWD="${status_cwd#*|}"
-    return "${status_cwd%%|*}"
+    return $status
 }
 
 # --- Close SSH connection and clean up ---
 cleanup() {
-    local status=$?
+    local final_status=$?
 
-    if ssh -O check $SSH_OPTIONS "$USER@$HOST" 2>/dev/null; then
-        ssh -O exit $SSH_OPTIONS "$USER@$HOST" 2>/dev/null
-        echo -e "\nConnection to $SITE_NAME.$ENV_ID closed." >&2
-    elif [[ -S "$TEMP_DIR/ssh.socket" ]]; then
-        echo -e "\nConnection to $SITE_NAME.$ENV_ID was already closed." >&2
+    if (( INTERACTIVE_MODE == 1 )); then
+        # Remove remote temporary files, save command history.
+        ssh_exec "rm -f $REMOTE_CWD_FILE $REMOTE_PID_FILE"
+        history -a
     fi
 
-    history -a
+    # Attempt to close the SSH connection.
+    ssh -O exit $SSH_OPTIONS "$USER@$HOST" 2>/dev/null
+    local status=$?
+
+    if (( INTERACTIVE_MODE == 1 )); then
+        if (( status == 0 )); then
+            echo -e "\nConnection to $SITE_NAME.$ENV_ID closed." >&2
+        else
+            echo -e "\nClose connection to $SITE_NAME.$ENV_ID attempted. Status: $status" >&2
+        fi
+    fi
+
     rm -r "$TEMP_DIR"
-    exit $status
+    exit $final_status
 }
 trap cleanup EXIT
 
-# --- Execute commands from command-line or stdin ---
+# --- Non-interactive: execute commands from command-line or stdin ---
 if [[ $# -gt 1 ]] || ! [ -t 0 ]; then
     if [[ $# -gt 1 ]]; then
         shift
@@ -337,171 +355,187 @@ handle_copyr() {
 
 # -------- Interactive operation --------
 
-# First, check that we can connect successfully.
-ssh_exec "exit" || exit $?
-echo -e "\n$PANSSH_VERSION: Connected to $SITE_NAME.$ENV_ID\n" >&2
+interactive() {
 
-# Check for Bash version 4+.
-if ! ( [[ $BASH_VERSION =~ ^([0-9]+)\. ]] && (( ${BASH_REMATCH[1]} >= 4 )) ) then
-    echo -e "ℹ️  Tab-completion in PanSSH requires Bash 4+\n" >&2
-else
-    # Find our readx script.
-    readonly READX="readx.source.sh"
-    READX_PATH="$SCRIPT_DIR/$READX"
-    if [[ ! -f "$READX_PATH" ]]; then
-        READX_PATH="$SCRIPT_DIR/../lib/panssh/$READX"
+    local status
+
+    # First, check that we can connect successfully.
+    if ! ssh_exec "exit"; then
+        status=$?
+        echo -e "\n$PANSSH_VERSION: Failed to connect to $SITE_NAME.$ENV_ID\n" >&2
+        exit $status
     fi
 
-    if [[ ! -f "$READX_PATH" ]]; then
-        echo -e "ℹ️  Failed to find $READX. Tab-completion will not be available.\n" >&2
-        unset READX_PATH
+    echo -e "\n$PANSSH_VERSION: Connected to $SITE_NAME.$ENV_ID\n" >&2
+    readonly INTERACTIVE_MODE=1
+
+    # Check for Bash version 4+.
+    if ! ( [[ $BASH_VERSION =~ ^([0-9]+)\. ]] && (( ${BASH_REMATCH[1]} >= 4 )) ) then
+        echo -e "ℹ️  Tab-completion in PanSSH requires Bash 4+\n" >&2
     else
-        readonly READX_PATH
-    fi
-fi
+        # Find our readx script.
+        readonly READX="readx.source.sh"
+        READX_PATH="$SCRIPT_DIR/$READX"
+        if [[ ! -f "$READX_PATH" ]]; then
+            READX_PATH="$SCRIPT_DIR/../lib/panssh/$READX"
+        fi
 
-# Get local colour settings.
-readonly clr0=$(tput sgr0 2>/dev/null) \
-&& readonly clr1=$(tput setaf 1 2>/dev/null) \
-&& readonly clr2=$(tput setaf 3 2>/dev/null) \
-&& readonly clr3=$(tput setaf 6 2>/dev/null)
-
-# Escaped prompt used, with readx (bash command line input).
-readonly prompt_ps1=$( printf \
-    "\[${clr1}\]%s\[${clr0}\].\[${clr2}\]%s\[${clr0}\]:\[${clr3}\]%s\[${clr0}\]\$ " \
-    "$SITE_NAME" "$ENV_ID" "_CWD_"
-)
-
-# Get un-escaped prompt, used with `echo` and `read`.
-tmp=${prompt_ps1//\\[/}
-readonly prompt=${tmp//\\]/}
-
-# Set up command history behaviour.
-export HISTFILE="$STORAGE_DIR/$SITE_NAME.$ENV_ID.history"
-export HISTCONTROL=ignorespace:ignoredups:erasedups
-history -r
-
-# Set up initial state.
-REMOTE_CWD="/code"
-current_dir="$REMOTE_CWD"
-current_status=0
-auto_ls=0
-
-# Basic environment checks.
-if ssh_exec "cd $current_dir"; then
-    if ssh_exec "[ -w $current_dir ]"; then
-        echo -e "🟡 $current_dir directory is writable (SFTP mode)\n" >&2
-    else
-        echo -e "🚫 $current_dir directory is read-only (Git mode)\n" >&2
-    fi
-fi
-
-# Create our remote home directory if it doesn't exist.
-ssh_exec "mkdir -p \"$REMOTE_HOME\""
-
-# --- Main loop ---
-trap '' SIGINT
-while true; do
-    if [[ -n "$READX_PATH" ]]; then
-        # readx is available - use it for command input.
-        export READX_EXEC="ssh $SSH_OPTIONS $USER@$HOST 'echo %s | bash'"
-        export REMOTE_ENV CWD="$current_dir"
-        export READX_PROMPT="${prompt_ps1/_CWD_/$current_dir}"
-        export READX_FIRST_TIME="${READX_FIRST_TIME:-1}"
-
-        # Use bash interactive to read command input with completion.
-        cmd=$(/usr/bin/env bash --init-file "$READX_PATH")
-        # Re-display both prompt and input, to mimic standard Bash behaviour.
-        echo "${prompt/_CWD_/$current_dir}$cmd"
-        READX_FIRST_TIME=0
-    else
-        # readx is not available - use `read` for command input.
-        cmd=$(
-            trap - SIGINT
-            bind '"\t":' 2>/dev/null
-            read -e -r -p "${prompt/_CWD_/$current_dir}" cmd && echo $cmd
-        ) || echo
-        history -s "$cmd"
-    fi
-
-    # Handle empty input.
-    [[ -z "$cmd" ]] && continue
-
-    # Handle `exit [status]`.
-    if [[ "$cmd" =~ ^exit([[:space:]]+(.*))?$ ]]; then
-        current_status="${BASH_REMATCH[2]:-0}"
-        break;
-    fi
-
-    # Handle built-in commands.
-    if [[ "$cmd" =~ ^\.([[:alnum:]_]+)([[:space:]]+(.+))?$ ]]; then
-        action="${BASH_REMATCH[1]}"
-
-        # Get command arguments (if any).
-        if [[ -n "${BASH_REMATCH[3]}" ]]; then
-            read -ra args <<< "${BASH_REMATCH[3]}"
+        if [[ ! -f "$READX_PATH" ]]; then
+            echo -e "ℹ️  Failed to find $READX. Tab-completion will not be available.\n" >&2
+            unset READX_PATH
         else
-            args=()  # no arguments
+            readonly READX_PATH
         fi
-
-        case "$action" in
-            help)
-                show_commands
-                continue
-                ;;
-            edit|ed)
-                file_path="${args[0]}"
-                edit_file "edit" "$file_path" "${args[@]:1}"
-                continue
-                ;;
-            view|vw)
-                file_path="${args[0]}"
-                edit_file "view" "$file_path" "${args[@]:1}"
-                continue
-                ;;
-            copy|cp)
-                handle_copy args
-                continue
-                ;;
-            copyr|cr)
-                handle_copyr args
-                continue
-                ;;
-            rsync|rs)
-                handle_rsync args
-                continue
-                ;;
-        esac
     fi
 
-    # Handle toggling of auto-ls feature.
-    if [[ "$cmd" == ".ls" ]]; then
-        if (( auto_ls == 0 )); then
-            echo "✅ Auto-ls enabled" >&2
-            auto_ls=1
-            ssh_exec "cd \"$current_dir\" && ls -pC --group-directories-first"
+    # Get local colour settings.
+    local clr0=$(tput sgr0 2>/dev/null) \
+    && local clr1=$(tput setaf 1 2>/dev/null) \
+    && local clr2=$(tput setaf 3 2>/dev/null) \
+    && local clr3=$(tput setaf 6 2>/dev/null)
+
+    # Escaped prompt used, with readx (bash command line input).
+    local prompt_ps1=$( printf \
+        "\[${clr1}\]%s\[${clr0}\].\[${clr2}\]%s\[${clr0}\]:\[${clr3}\]%s\[${clr0}\]\$ " \
+        "$SITE_NAME" "$ENV_ID" "_CWD_"
+    )
+
+    # Get un-escaped prompt, used with `echo` and `read`.
+    local tmp=${prompt_ps1//\\[/}
+    local prompt=${tmp//\\]/}
+
+    # Set up command history behaviour.
+    export HISTFILE="$STORAGE_DIR/$SITE_NAME.$ENV_ID.history"
+    export HISTCONTROL=ignorespace:ignoredups:erasedups
+    history -r
+
+    # Set up initial state.
+    REMOTE_CWD="/code"
+    current_dir="$REMOTE_CWD"
+
+    readonly clr0 clr1 clr2 clr3 prompt prompt_ps1
+
+    local current_status=0
+    local auto_ls=0
+    local cmd
+
+    # Basic environment checks.
+    if ssh_exec "cd $current_dir"; then
+        if ssh_exec "[ -w $current_dir ]"; then
+            echo -e "🟡 $current_dir directory is writable (SFTP mode)\n" >&2
         else
-            echo "🚫 Auto-ls disabled" >&2
-            auto_ls=0
-        fi
-        continue
-    fi
-
-    # Execute a remote command:
-    # Run the command with our environment, current directory and correct initial value for $?
-    ssh_exec_track "export $REMOTE_ENV; cd \"$current_dir\" && bash -c \"exit $current_status\"" "$cmd"
-    current_status=$?
-
-    # Check whether the command changed the current directory.
-    if [[ -n "$REMOTE_CWD"  &&  "$REMOTE_CWD" != "$current_dir" ]]; then
-        current_dir="$REMOTE_CWD"
-
-        # Automatic directory listing if enabled.
-        if (( auto_ls == 1 )); then
-            ssh_exec "cd \"$current_dir\" && ls -pC --group-directories-first"
+            echo -e "🚫 $current_dir directory is read-only (Git mode)\n" >&2
         fi
     fi
 
-done
+    # Create our remote home directory if it doesn't exist.
+    ssh_exec "mkdir -p \"$REMOTE_HOME\""
 
-exit $current_status
+    # --- Main loop ---
+    trap '' SIGINT
+    while true; do
+        if [[ -n "$READX_PATH" ]]; then
+            # readx is available - use it for command input.
+            export READX_EXEC="ssh $SSH_OPTIONS $USER@$HOST 'echo %s | bash'"
+            export REMOTE_ENV CWD="$current_dir"
+            export READX_PROMPT="${prompt_ps1/_CWD_/$current_dir}"
+            export READX_FIRST_TIME="${READX_FIRST_TIME:-1}"
+
+            # Use bash interactive to read command input with completion.
+            cmd=$(/usr/bin/env bash --init-file "$READX_PATH")
+            # Re-display both prompt and input, to mimic standard Bash behaviour.
+            echo "${prompt/_CWD_/$current_dir}$cmd"
+            READX_FIRST_TIME=0
+        else
+            # readx is not available - use `read` for command input.
+            cmd=$(
+                trap - SIGINT
+                bind '"\t":' 2>/dev/null
+                read -e -r -p "${prompt/_CWD_/$current_dir}" cmd && echo $cmd
+            ) || echo
+            history -s "$cmd"
+        fi
+
+        # Handle empty input.
+        [[ -z "$cmd" ]] && continue
+
+        # Handle `exit [status]`.
+        if [[ "$cmd" =~ ^exit([[:space:]]+(.*))?$ ]]; then
+            current_status="${BASH_REMATCH[2]:-0}"
+            break;
+        fi
+
+        # Handle built-in commands.
+        if [[ "$cmd" =~ ^\.([[:alnum:]_]+)([[:space:]]+(.+))?$ ]]; then
+            local action="${BASH_REMATCH[1]}"
+
+            # Get command arguments (if any).
+            if [[ -n "${BASH_REMATCH[3]}" ]]; then
+                read -ra args <<< "${BASH_REMATCH[3]}"
+            else
+                args=()
+            fi
+
+            case "$action" in
+                help)
+                    show_commands
+                    continue
+                    ;;
+                edit|ed)
+                    file_path="${args[0]}"
+                    edit_file "edit" "$file_path" "${args[@]:1}"
+                    continue
+                    ;;
+                view|vw)
+                    file_path="${args[0]}"
+                    edit_file "view" "$file_path" "${args[@]:1}"
+                    continue
+                    ;;
+                copy|cp)
+                    handle_copy args
+                    continue
+                    ;;
+                copyr|cr)
+                    handle_copyr args
+                    continue
+                    ;;
+                rsync|rs)
+                    handle_rsync args
+                    continue
+                    ;;
+            esac
+        fi
+
+        # Handle toggling of auto-ls feature.
+        if [[ "$cmd" == ".ls" ]]; then
+            if (( auto_ls == 0 )); then
+                echo "✅ auto-ls enabled" >&2
+                auto_ls=1
+                ssh_exec "cd \"$current_dir\" && ls -pC --group-directories-first"
+            else
+                echo "🚫 auto-ls disabled" >&2
+                auto_ls=0
+            fi
+            continue
+        fi
+
+        # Execute a remote command:
+        # Run the command with our environment, current directory and correct initial value for $?
+        ssh_exec_track "export $REMOTE_ENV; cd \"$current_dir\"" "$cmd" "$current_status"
+        current_status="$?"
+
+        # Check whether the command changed the current directory.
+        if [[ -n "$REMOTE_CWD"  &&  "$REMOTE_CWD" != "$current_dir" ]]; then
+            current_dir="$REMOTE_CWD"
+
+            # Automatic directory listing if enabled.
+            if (( auto_ls == 1 )); then
+                ssh_exec "cd \"$current_dir\" && ls -pC --group-directories-first"
+            fi
+        fi
+
+    done
+    exit $current_status
+}
+
+interactive
