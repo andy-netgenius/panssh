@@ -26,20 +26,19 @@ mkdir -p -m 700 "$STORAGE_DIR" "$TEMP_DIR"
 
 readonly LOCAL_HOST=$(hostname -s)
 readonly LOCAL_USER=$(whoami)
+
 readonly REMOTE_HOME="/tmp/panssh-home.$LOCAL_USER.$LOCAL_HOST"
 readonly REMOTE_ENV="HOME=\"$REMOTE_HOME\" XDG_CACHE_HOME=\"$REMOTE_HOME/.cache\" WP_CLI_CACHE_DIR=\"$REMOTE_HOME/.cache/wp-cli\""
 readonly REMOTE_CWD_FILE="$REMOTE_HOME/.panssh-cwd.$$.tmp"
 readonly REMOTE_PID_FILE="$REMOTE_HOME/.panssh-pid.$$.tmp"
 
-readonly SSH_OPTIONS=" \
-  -o ConnectTimeout=30 \
-  -o ControlMaster=auto \
-  -o ControlPath=$TEMP_DIR/ssh.socket \
-  -o ControlPersist=5m \
-  -o LogLevel=info \
-  -o Port=$SSH_PORT \
-  -o StrictHostKeyChecking=accept-new \
-  -o UserKnownHostsFile=$STORAGE_DIR/known_hosts"
+SSH_OPTIONS=(
+  -o ConnectTimeout=30
+  -o LogLevel=info
+  -o Port="$SSH_PORT"
+  -o StrictHostKeyChecking=accept-new
+  -o UserKnownHostsFile="$STORAGE_DIR/known_hosts"
+)
 
 # Location of this script.
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -101,10 +100,59 @@ readonly HOST="appserver.$ENV_ID.$SITE_ID.drush.in"
 ssh_exec() {
     local cmd=$(printf '%q' "$1")
     # Running 'echo $cmd | bash' is the only method that works on Pantheon.
-    ssh $SSH_OPTIONS "$USER@$HOST" "echo $cmd | bash"
+    ssh "${SSH_OPTIONS[@]}" "$USER@$HOST" "echo $cmd | bash"
     local status=$?
     return $status
 }
+
+# --- Close SSH connection and clean up ---
+cleanup() {
+    local final_status=$?
+
+    if (( INTERACTIVE_MODE == 1 )); then
+        # Remove remote temporary files, save command history.
+        ssh_exec "rm -f $REMOTE_CWD_FILE $REMOTE_PID_FILE"
+        history -a
+    fi
+
+    # Attempt to close the SSH connection.
+    ssh -O exit "${SSH_OPTIONS[@]}" "$USER@$HOST" 2>/dev/null
+    local status=$?
+
+    if (( INTERACTIVE_MODE == 1 )); then
+        if (( status == 0 )); then
+            echo -e "\nConnection to $SITE_NAME.$ENV_ID closed." >&2
+        else
+            echo -e "\nClose connection to $SITE_NAME.$ENV_ID attempted. Status: $status" >&2
+        fi
+    fi
+
+    rm -r "$TEMP_DIR"
+    exit "$final_status"
+}
+trap cleanup EXIT
+
+# --- Non-interactive: execute commands from command-line or stdin ---
+if [[ $# -gt 1 ]] || ! [ -t 0 ]; then
+    if [[ $# -gt 1 ]]; then
+        shift
+        cmd="$*"
+    else
+        cmd=$(cat)
+    fi
+    ssh_exec "$REMOTE_ENV; $cmd"
+    exit $?
+fi
+
+
+# -------- Interactive mode supporting functions --------
+
+# Extend SSH options for connection reuse.
+SSH_OPTIONS+=(
+  -o ControlMaster=auto
+  -o ControlPath="$TEMP_DIR/ssh.socket"
+  -o ControlPersist=5m
+)
 
 # --- SSH wrapper with setup and tracking, used for interactive mode ---
 ssh_exec_track() {
@@ -142,53 +190,17 @@ ssh_exec_track() {
     return $status
 }
 
-# --- Close SSH connection and clean up ---
-cleanup() {
-    local final_status=$?
-
-    if (( INTERACTIVE_MODE == 1 )); then
-        # Remove remote temporary files, save command history.
-        ssh_exec "rm -f $REMOTE_CWD_FILE $REMOTE_PID_FILE"
-        history -a
-    fi
-
-    # Attempt to close the SSH connection.
-    ssh -O exit $SSH_OPTIONS "$USER@$HOST" 2>/dev/null
-    local status=$?
-
-    if (( INTERACTIVE_MODE == 1 )); then
-        if (( status == 0 )); then
-            echo -e "\nConnection to $SITE_NAME.$ENV_ID closed." >&2
-        else
-            echo -e "\nClose connection to $SITE_NAME.$ENV_ID attempted. Status: $status" >&2
-        fi
-    fi
-
-    rm -r "$TEMP_DIR"
-    exit $final_status
-}
-trap cleanup EXIT
-
-# --- Non-interactive: execute commands from command-line or stdin ---
-if [[ $# -gt 1 ]] || ! [ -t 0 ]; then
-    if [[ $# -gt 1 ]]; then
-        shift
-        cmd="$*"
-    else
-        cmd=$(cat)
-    fi
-    ssh_exec "$REMOTE_ENV; $cmd"
-    exit $?
-fi
-
 # --- File transfer between local and host ---
 transfer_file() {
     # Standard scp fails under Lando, reason unknown.
     # Until resolved, we use rsync as a workaround.
     if [[ $LANDO != "ON" ]]; then
-        scp -q $SSH_OPTIONS "$1" "$2"
+#        scp -pq "${SSH_OPTIONS[@]}" "$1" "$2"
+        #rsync -t -e "ssh ${SSH_OPTIONS[@]}" "$1" "$2"
+        rsync_exec "-t" "$1" "$2"
     else
-        rsync -qe "ssh $SSH_OPTIONS" "$1" "$2"
+        rsync -t -e "ssh ${SSH_OPTIONS[@]}" "$1" "$2"
+        # rsync_exec "${rsync_opts[@]}" "${paths[@]}" "$target"
     fi
     return $?
 }
@@ -218,20 +230,16 @@ edit_file() {
     shift 2
     local editor_args=("$@")
 
-    # Resolve remote path.
-    remote_path=$(ssh_exec "export $REMOTE_ENV; cd \"$current_dir\" && eval realpath \"$remote_path\"")
+    # Prefix remote path with current directory, if needed.
+    [[ "$remote_path" != /* ]] && remote_path="${REMOTE_CWD}/${remote_path}"
 
     local can_access=0
     local download_needed=0
-
-    if ssh_exec "[[ -e \"$remote_path\" ]]"; then
-        # Path exists, check if it's a file and is accessible.
+    
+    if ssh_exec "[[ -f \"$remote_path\" ]]"; then
+        # File exists, so we need to download it. Check access.
         download_needed=1
-        if ssh_exec "[[ -d \"$remote_path\" ]]"; then
-            echo "🟡 Path is a directory." >&2
-        elif ! ssh_exec "[[ -f \"$remote_path\" ]]"; then
-            echo "🟡 Not a regular file." >&2
-        elif ! ssh_exec "[[ -r \"$remote_path\" ]]"; then
+        if ! ssh_exec "[[ -r \"$remote_path\" ]]"; then
             echo "🚫 File is not readable." >&2
         elif [[ "$action" == "edit" ]] && ! ssh_exec "[[ -w \"$remote_path\" ]]"; then
             read -rp "🚫 File is not writable. View it instead? [y] " >&2 response
@@ -243,17 +251,17 @@ edit_file() {
             can_access=1
         fi
     elif [[ "$action" == "edit" ]]; then
-        # No existing file - check we can create it.
+        # No existing file - check whether we can create it.
         local dirname=$(dirname "$remote_path")
         if ! ssh_exec "[[ -d \"$dirname\" ]]"; then
-            echo "🚫 Directory not found." >&2
+            echo "🟡 Directory not found." >&2
         elif ! ssh_exec "[[ -w \"$dirname\" ]]"; then
             echo "🚫 Directory is not writable." >&2
         else
             can_access=1
         fi
     else
-        echo "🚫 File not found." >&2
+        echo "🟡 File not found." >&2
     fi
 
     # Return now if we can't edit the requested file.
@@ -293,18 +301,29 @@ edit_file() {
     return 0
 }
 
+# --- Execute rsync ---
+rsync_exec() {
+
+    local rsync_opts=$1
+    local sources=$2
+    local target=$3
+    local ssh_command=(ssh "${SSH_OPTIONS[@]}")
+
+    rsync "${rsync_opts[@]}" -e "$ssh_command" "${sources[@]}" "$target"
+    return $?
+}
+
 # --- Resolve path as either local or remote ---
 resolve_path() {
     local path="$1"
 
     if [[ "$path" == local:* ]]; then
-        # Local path, strip prefix
-        # Expand ~ and relative paths
+        # Strip `local:` prefix, expand ~ and relative paths.
         path="${path#local:}"
         echo "$(realpath -m "$path")"
     else
-        # Remote path, prepend current_dir if relative
-        [[ "$path" != /* ]] && path="${current_dir}/${path}"
+        # Remote path - if relative, prepend $REMOTE_CWD.
+        [[ "$path" != /* ]] && path="${REMOTE_CWD}/${path}"
         echo "${USER}@${HOST}:${path}"
     fi
 }
@@ -334,7 +353,8 @@ handle_rsync() {
     unset 'paths[-1]'
 
     # Run rsync
-    rsync -e "ssh $SSH_OPTIONS" "${rsync_opts[@]}" "${paths[@]}" "$target"
+    rsync_exec "${rsync_opts[@]}" "${paths[@]}" "$target"
+    return $?
 }
 
 # --- Handle the .copy command ---
@@ -343,14 +363,16 @@ handle_copy() {
     # Use rsync options: compress, progress.
     local args_with_opts=(-tzP "${cmd_args[@]}")
     handle_rsync args_with_opts
+    return $?
 }
 
-# --- Handle the .copyr command ---
+# --- Handle the .copyr (copy relative) command ---
 handle_copyr() {
     local -n cmd_args=$1
     # Use rsync options: archive, compress, progress.
     local args_with_opts=(-rtzP "${cmd_args[@]}")
     handle_rsync args_with_opts
+    return $?
 }
 
 # -------- Interactive operation --------
@@ -436,7 +458,8 @@ interactive() {
     while true; do
         if [[ -n "$READX_PATH" ]]; then
             # readx is available - use it for command input.
-            export READX_EXEC="ssh $SSH_OPTIONS $USER@$HOST 'echo %s | bash'"
+
+            export READX_EXEC="ssh "${SSH_OPTIONS[@]}" "$USER@$HOST" 'echo %s | bash'"
             export REMOTE_ENV CWD="$current_dir"
             export READX_PROMPT="${prompt_ps1/_CWD_/$current_dir}"
             export READX_FIRST_TIME="${READX_FIRST_TIME:-1}"
@@ -451,7 +474,7 @@ interactive() {
             cmd=$(
                 trap - SIGINT
                 bind '"\t":' 2>/dev/null
-                read -e -r -p "${prompt/_CWD_/$current_dir}" cmd && echo $cmd
+                read -e -r -p "${prompt/_CWD_/$current_dir}" cmd && echo "$cmd"
             ) || echo
             history -s "$cmd"
         fi
