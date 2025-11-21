@@ -12,26 +12,6 @@ proc strip_ansi {text} {
     return $text
 }
 
-# Wait for a prompt, ignoring ANSI codes
-# Usage: await_prompt "pattern" {action}
-proc await_prompt {pattern action} {
-    set buffer ""
-    while {1} {
-        expect {
-            -re {.+} {
-                append buffer $expect_out(buffer)
-                set clean [strip_ansi $buffer]
-                if {[regexp $pattern $clean]} {
-                    uplevel 1 $action
-                    return
-                }
-            }
-            timeout { error "Timeout waiting for pattern: $pattern" }
-            eof { error "EOF encountered while waiting for pattern: $pattern" }
-        }
-    }
-}
-
 proc await {expected {limit 5}} {
     expect -timeout $limit $expected {
         puts "✅ Found $limit: `$expected`"
@@ -55,6 +35,12 @@ proc send_cmd {cmd expected prompt {limit 5}} {
 set site "ngd11"
 set environment "dev"
 set host "$site.$environment"
+
+# Find directory of this script
+set editor "editor-test.sh"
+set script_dir [file dirname [info script]]
+set env(EDITOR) [file join $script_dir "$editor"]
+
 set cwd "/code"
 set prompt "$host:$cwd\$ "
 #set prompt_re [string map {. {\.}} "$prompt1"]
@@ -70,24 +56,38 @@ expect "PanSSH 1.3.2: Connected to $host" {
     puts "✅ Welcome message"
 }
 
-# Wait for initial prompt
-expect "$prompt" {
-    puts "✅ Initial prompt $prompt"
-}
+# --- Initial prompt ---
+await "$prompt"
 
-# -------------------------------
-# Run simple commands
-# -------------------------------
-
-send_cmd "pwd" "/code" "$prompt"
+# --- Initial directory ---
 send_cmd "pwd" "/code" "$prompt"
 
-#set prompt "$host:$cwd\$ "
-#send_cmd "echo 'slept'" "slept" "$prompt"
-
-# cd /tmp
+# --- cd /tmp ---
+set cwd "/tmp"
 set prompt "$host:$cwd\$ "
-send_cmd "cd /tmp" "" "$prompt"
+send_cmd "cd $cwd && pwd" "" "$prompt"
+
+# --- create file ---
+set test_file "panssh-test.txt"
+set content "Created by automated PanSSH test"
+send_cmd "echo $content | tee $test_file" "$content" "$prompt"
+send_cmd "cat $test_file" "$content" "$prompt"
+
+# --- view file ---
+send_cmd ".view $test_file" "$editor exit" "$prompt"
+send_cmd "cat $test_file" "$content" "$prompt"
+
+# --- edit file ---
+set content "Edited by automated PanSSH test"
+send_cmd ".edit $test_file" "$editor exit" "$prompt"
+send_cmd "cat $test_file" "$content" "$prompt" 10
+
+#send_cmd ".help" "Interactive mode built-in commands:" "$prompt"
+#sleep 3
+expect eof
+
+#send_cmd ".edit /etc/hostname" "🚫 File is not writable. View it instead? [y]" ""
+#send "\r"
 
 if 0 {
     # cd /tmp
@@ -111,9 +111,8 @@ if 0 {
 # Exit
 # -------------------------------
 
-puts "Exiting..."
-sleep 1
-send_cmd "exit" "Connection to $host closed." ""
+puts "\nExiting..."
 
-expect eof
+sleep 1
+send_cmd "exit" "Connection to $host closed." "1"
 puts "PanSSH interactive test complete."
