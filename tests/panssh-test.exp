@@ -1,0 +1,119 @@
+#!/usr/bin/expect -f
+# panssh-test.exp
+# Simple PanSSH interactive test harness
+
+# -------------------------------
+# Helper procedures
+# -------------------------------
+
+# Remove ANSI escape sequences from text
+proc strip_ansi {text} {
+    regsub -all {\x1B\[[0-9;]*[A-Za-z]} $text "" text
+    return $text
+}
+
+# Wait for a prompt, ignoring ANSI codes
+# Usage: await_prompt "pattern" {action}
+proc await_prompt {pattern action} {
+    set buffer ""
+    while {1} {
+        expect {
+            -re {.+} {
+                append buffer $expect_out(buffer)
+                set clean [strip_ansi $buffer]
+                if {[regexp $pattern $clean]} {
+                    uplevel 1 $action
+                    return
+                }
+            }
+            timeout { error "Timeout waiting for pattern: $pattern" }
+            eof { error "EOF encountered while waiting for pattern: $pattern" }
+        }
+    }
+}
+
+proc await {expected {limit 5}} {
+    expect -timeout $limit $expected {
+        puts "✅ Found $limit: `$expected`"
+    } timeout {
+        puts "❌ Timed out awaiting: `$expected`"
+        exit 1
+    }       
+}
+
+# Send a command and wait for the next prompt
+proc send_cmd {cmd expected prompt {limit 5}} {
+    send "$cmd\r"
+    await $expected $limit
+    await $prompt $limit
+}
+
+# -------------------------------
+# Start PanSSH session
+# -------------------------------
+
+set site "ngd11"
+set environment "dev"
+set host "$site.$environment"
+set cwd "/code"
+set prompt "$host:$cwd\$ "
+#set prompt_re [string map {. {\.}} "$prompt1"]
+
+set timeout 5
+spawn ./panssh $host
+
+# Debug: log all output to stdout
+log_user 1
+
+# Wait for welcome message
+expect "PanSSH 1.3.2: Connected to $host" {
+    puts "✅ Welcome message"
+}
+
+# Wait for initial prompt
+expect "$prompt" {
+    puts "✅ Initial prompt $prompt"
+}
+
+# -------------------------------
+# Run simple commands
+# -------------------------------
+
+send_cmd "pwd" "/code" "$prompt"
+send_cmd "pwd" "/code" "$prompt"
+
+#set prompt "$host:$cwd\$ "
+#send_cmd "echo 'slept'" "slept" "$prompt"
+
+# cd /tmp
+set prompt "$host:$cwd\$ "
+send_cmd "cd /tmp" "" "$prompt"
+
+if 0 {
+    # cd /tmp
+    send_cmd "cd /tmp" {ngd11\.dev:/code\$}
+    puts "Changed directory to /tmp"
+
+    # pwd in /tmp
+    send_cmd "pwd" {ngd11\.dev:/tmp\$}
+    puts "PWD in /tmp captured"
+
+    # date | tee panssh-test.txt
+    send_cmd "date | tee panssh-test.txt" {ngd11\.dev:/tmp\$}
+    puts "Date written to panssh-test.txt"
+
+    # cat panssh-test.txt
+    send_cmd "cat panssh-test.txt" {ngd11\.dev:/tmp\$}
+    puts "File content verified"
+}
+
+# -------------------------------
+# Exit
+# -------------------------------
+
+puts "Exiting..."
+sleep 1
+send_cmd "exit" "Connection to $host closed." ""
+
+expect eof
+puts "PanSSH interactive test complete."
