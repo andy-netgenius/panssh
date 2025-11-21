@@ -10,19 +10,16 @@ if [ -z "$FILE" ]; then
     exit 1
 fi
 
-echo "--- BEGIN ORIGINAL CONTENTS ($FILE) ---" >&2
+# Show current content
 if [ -f "$FILE" ]; then
     cat "$FILE"
 else
-    echo "[File does not exist yet]" >&2
+    echo "[Empty file]"
 fi
-echo "--- END ORIGINAL CONTENTS ---" >&2
 
-echo "Overwriting file with test content..."
-
-# Replace contents with predictable text
+# Replace content
 echo "Edited by automated PanSSH test" >"$FILE"
 
 # Message used by the test script to detect editor exit.
-echo "$(basename $0) exit" >&2
+echo "editor exit" >&2
 exit 0

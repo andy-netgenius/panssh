@@ -74,38 +74,28 @@ send_cmd "echo $content | tee $test_file" "$content" "$prompt"
 send_cmd "cat $test_file" "$content" "$prompt"
 
 # --- view file ---
-send_cmd ".view $test_file" "$editor exit" "$prompt"
+send_cmd ".view $test_file" "editor exit" "$prompt"
 send_cmd "cat $test_file" "$content" "$prompt"
 
 # --- edit file ---
 set content "Edited by automated PanSSH test"
-send_cmd ".edit $test_file" "$editor exit" "$prompt"
+send_cmd ".edit $test_file" "editor exit" "$prompt"
 send_cmd "cat $test_file" "$content" "$prompt" 10
 
-#send_cmd ".help" "Interactive mode built-in commands:" "$prompt"
-#sleep 3
-expect eof
+# --- edit file (unchanged) ---
+send_cmd ".edit $test_file" "🟡 File has not changed." "$prompt"
+send_cmd "cat $test_file" "$content" "$prompt" 10
 
-#send_cmd ".edit /etc/hostname" "🚫 File is not writable. View it instead? [y]" ""
-#send "\r"
+# --- edit new file ---
+send_cmd "rm $test_file" "" "$prompt"
+sleep 1
+send_cmd ".edit $test_file" "editor exit" "$prompt"
+send_cmd "cat $test_file" "$content" "$prompt" 10
 
-if 0 {
-    # cd /tmp
-    send_cmd "cd /tmp" {ngd11\.dev:/code\$}
-    puts "Changed directory to /tmp"
-
-    # pwd in /tmp
-    send_cmd "pwd" {ngd11\.dev:/tmp\$}
-    puts "PWD in /tmp captured"
-
-    # date | tee panssh-test.txt
-    send_cmd "date | tee panssh-test.txt" {ngd11\.dev:/tmp\$}
-    puts "Date written to panssh-test.txt"
-
-    # cat panssh-test.txt
-    send_cmd "cat panssh-test.txt" {ngd11\.dev:/tmp\$}
-    puts "File content verified"
-}
+# --- .help and misc commands ---
+send_cmd ".help" "Short versions:*" "$prompt"
+send_cmd ".ls" "✅ auto-ls enabled" "$prompt"
+send_cmd ".ls" "🚫 auto-ls disabled" "$prompt"
 
 # -------------------------------
 # Exit
