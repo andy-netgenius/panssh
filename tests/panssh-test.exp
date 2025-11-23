@@ -22,10 +22,22 @@ proc await {expected {limit 5}} {
 }
 
 # Send a command and wait for the next prompt
-proc send_cmd {cmd expected prompt {limit 5}} {
+proc send_cmd {cmd expected {prompt $prompt} {limit 5}} {
     send "$cmd\r"
     await $expected $limit
     await $prompt $limit
+}
+
+proc check_local_file {file content} {
+    # Read file, then delete it.
+    set file_content [exec cat $file]
+    exec rm $file
+
+    # Confirm expected file content
+    if {$file_content ne $content} {
+        puts "❌ Unexpected content in $file"
+        exit 1
+    }
 }
 
 # -------------------------------
@@ -43,7 +55,6 @@ set env(EDITOR) [file join $script_dir "$editor"]
 
 set cwd "/code"
 set prompt "$host:$cwd\$ "
-#set prompt_re [string map {. {\.}} "$prompt1"]
 
 set timeout 5
 spawn ./panssh $host
@@ -65,7 +76,7 @@ send_cmd "pwd" "/code" "$prompt"
 # --- cd /tmp ---
 set cwd "/tmp"
 set prompt "$host:$cwd\$ "
-send_cmd "cd $cwd && pwd" "" "$prompt"
+send_cmd "cd $cwd && pwd" "/tmp" "$prompt"
 
 # --- create file ---
 set test_file "panssh-test.txt"
@@ -80,17 +91,29 @@ send_cmd "cat $test_file" "$content" "$prompt"
 # --- edit file ---
 set content "Edited by automated PanSSH test"
 send_cmd ".edit $test_file" "editor exit" "$prompt"
-send_cmd "cat $test_file" "$content" "$prompt" 10
+send_cmd "cat $test_file" "$content" "$prompt"
 
 # --- edit file (unchanged) ---
 send_cmd ".edit $test_file" "🟡 File has not changed." "$prompt"
-send_cmd "cat $test_file" "$content" "$prompt" 10
+send_cmd "cat $test_file" "$content" "$prompt"
 
 # --- edit new file ---
-send_cmd "rm $test_file" "" "$prompt"
-sleep 1
+send_cmd "rm $test_file" "$prompt" "$prompt"
 send_cmd ".edit $test_file" "editor exit" "$prompt"
-send_cmd "cat $test_file" "$content" "$prompt" 10
+send_cmd "cat $test_file" "$content" "$prompt"
+
+# --- copy to local ---
+set test_file_local "/tmp/$test_file"
+exec rm -f $test_file_local
+
+send_cmd ".copy $test_file local:$test_file_local" "$prompt" "$prompt"
+check_local_file "$test_file_local" "$content"
+
+send_cmd ".copyr $test_file local:$test_file_local" "$prompt" "$prompt"
+check_local_file "$test_file_local" "$content"
+
+send_cmd ".rsync -t $test_file local:$test_file_local" "$prompt" "$prompt"
+check_local_file "$test_file_local" "$content"
 
 # --- .help and misc commands ---
 send_cmd ".help" "Short versions:*" "$prompt"
