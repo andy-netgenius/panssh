@@ -22,10 +22,16 @@ proc await {expected {limit 5}} {
 }
 
 # Send a command and wait for the next prompt
-proc send_cmd {cmd expected {prompt $prompt} {limit 5}} {
+proc send_cmd {cmd {expected ""} {limit 5}} {
+    global PROMPT
+
+    if {$expected eq ""} {
+        set expected $PROMPT
+    }
+
     send "$cmd\r"
     await $expected $limit
-    await $prompt $limit
+    await $PROMPT $limit
 }
 
 proc check_local_file {file content} {
@@ -40,6 +46,23 @@ proc check_local_file {file content} {
     }
 }
 
+proc test_file_transfer { cmd } {
+    set remote_dir "\$HOME/panssh-test/files"
+    set local_dir  "/tmp/panssh-test/files"
+        
+    send_cmd "test -d $remote_dir && rm -r $remote_dir"
+    send_cmd "mkdir -p $remote_dir"
+
+    # Generate files.
+    for {set i 0} {$i < 5} {incr i} {
+        set timestamp [exec date +"%s.%N"]
+        send_cmd "echo $timestamp > $remote_dir/$timestamp"
+    }
+    send_cmd "ls $remote_dir"
+    send_cmd "$cmd $remote_dir/ local:/tmp/"
+    # Copy to local
+}
+
 # -------------------------------
 # Start PanSSH session
 # -------------------------------
@@ -51,10 +74,10 @@ set host "$site.$environment"
 # Find directory of this script
 set editor "editor-test.sh"
 set script_dir [file dirname [info script]]
-set env(EDITOR) [file join $script_dir "$editor"]
+set env(EDITOR) [file join $script_dir $editor]
 
 set cwd "/code"
-set prompt "$host:$cwd\$ "
+set PROMPT "$host:$cwd\$ "
 
 set timeout 5
 spawn ./panssh $host
@@ -62,63 +85,64 @@ spawn ./panssh $host
 # Debug: log all output to stdout
 log_user 1
 
-# Wait for welcome message
-expect "PanSSH 1.3.2: Connected to $host" {
-    puts "✅ Welcome message"
-}
+# ----- Tests -----
 
-# --- Initial prompt ---
-await "$prompt"
+# --- Welcome message and initial prompt ---
+send_cmd "" "PanSSH 1.3.2: Connected to $host"
 
-# --- Initial directory ---
-send_cmd "pwd" "/code" "$prompt"
+# --- Initial directory /code ---
+send_cmd "pwd" "/code"
+
+test_file_transfer ".cp"
+#puts "Done."
+#exit 0
+
+# --- .help and .ls commands ---
+send_cmd ".help" "Short versions:*"
+send_cmd ".ls" "✅ auto-ls enabled"
+send_cmd ".ls" "🚫 auto-ls disabled"
 
 # --- cd /tmp ---
 set cwd "/tmp"
-set prompt "$host:$cwd\$ "
-send_cmd "cd $cwd && pwd" "/tmp" "$prompt"
+set PROMPT "$host:$cwd\$ "
+send_cmd "cd $cwd && pwd" "/tmp"
 
 # --- create file ---
-set test_file "panssh-test.txt"
+set test_file "panssh-test.tmp"
 set content "Created by automated PanSSH test"
-send_cmd "echo $content | tee $test_file" "$content" "$prompt"
-send_cmd "cat $test_file" "$content" "$prompt"
+send_cmd "echo $content | tee $test_file" $content
+send_cmd "cat $test_file" $content
 
 # --- view file ---
-send_cmd ".view $test_file" "editor exit" "$prompt"
-send_cmd "cat $test_file" "$content" "$prompt"
+send_cmd ".view $test_file" "editor exit"
+send_cmd "cat $test_file" $content
 
 # --- edit file ---
 set content "Edited by automated PanSSH test"
-send_cmd ".edit $test_file" "editor exit" "$prompt"
-send_cmd "cat $test_file" "$content" "$prompt"
+send_cmd ".edit $test_file" "editor exit"
+send_cmd "cat $test_file" $content
 
 # --- edit file (unchanged) ---
-send_cmd ".edit $test_file" "🟡 File has not changed." "$prompt"
-send_cmd "cat $test_file" "$content" "$prompt"
+send_cmd ".edit $test_file" "🟡 File has not changed."
+send_cmd "cat $test_file" $content
 
 # --- edit new file ---
-send_cmd "rm $test_file" "$prompt" "$prompt"
-send_cmd ".edit $test_file" "editor exit" "$prompt"
-send_cmd "cat $test_file" "$content" "$prompt"
+send_cmd "rm $test_file"
+send_cmd ".edit $test_file" "editor exit"
+send_cmd "cat $test_file" $content
 
 # --- copy to local ---
 set test_file_local "/tmp/$test_file"
 exec rm -f $test_file_local
 
-send_cmd ".copy $test_file local:$test_file_local" "$prompt" "$prompt"
-check_local_file "$test_file_local" "$content"
+send_cmd ".copy $test_file local:$test_file_local"
+check_local_file $test_file_local $content
 
-send_cmd ".copyr $test_file local:$test_file_local" "$prompt" "$prompt"
-check_local_file "$test_file_local" "$content"
+send_cmd ".copyr $test_file local:$test_file_local"
+check_local_file $test_file_local $content
 
-send_cmd ".rsync -t $test_file local:$test_file_local" "$prompt" "$prompt"
-check_local_file "$test_file_local" "$content"
-
-# --- .help and misc commands ---
-send_cmd ".help" "Short versions:*" "$prompt"
-send_cmd ".ls" "✅ auto-ls enabled" "$prompt"
-send_cmd ".ls" "🚫 auto-ls disabled" "$prompt"
+send_cmd ".rsync -t $test_file local:$test_file_local"
+check_local_file $test_file_local $content
 
 # -------------------------------
 # Exit
