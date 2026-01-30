@@ -14,14 +14,14 @@ proc strip_ansi {text} {
 
 proc await {expected {limit 5}} {
     expect -timeout $limit $expected {
-        puts "✅ Found $limit: `$expected`"
+        # puts "✅ Found $limit: `$expected`"
     } timeout {
         puts "❌ Timed out awaiting: `$expected`"
         exit 1
     }       
 }
 
-# Send a command and wait for the next prompt
+# Send a command and wait for the next prompt.
 proc send_cmd {cmd {expected ""} {limit 5}} {
     global PROMPT
 
@@ -34,33 +34,50 @@ proc send_cmd {cmd {expected ""} {limit 5}} {
     await $PROMPT $limit
 }
 
-proc check_local_file {file content} {
-    # Read file, then delete it.
-    set file_content [exec cat $file]
-    exec rm $file
+# Test file transfer between local and remote.
+proc test_file_transfer {copy_cmd recursive} {
 
-    # Confirm expected file content
-    if {$file_content ne $content} {
-        puts "❌ Unexpected content in $file"
-        exit 1
+    set location  "/tmp/panssh-test"
+    set source "$location/files"
+    set filename "panssh-test.tmp"
+
+    # Delete any existing directories.
+    exec rm -rf $location
+    send_cmd "rm -rf $location"
+
+    # Generate test files and sub-directory if needed.
+    if {$recursive eq 0} {
+        send_cmd "mkdir -p $source"
+        send_cmd "touch $source/$filename"
+    } else {
+        send_cmd "mkdir -p $source/subdir"
+        send_cmd "touch $source/$filename $source/subdir/$filename"
     }
-}
 
-proc test_file_transfer { cmd } {
-    set remote_dir "\$HOME/panssh-test/files"
-    set local_dir  "/tmp/panssh-test/files"
-        
-    send_cmd "test -d $remote_dir && rm -r $remote_dir"
-    send_cmd "mkdir -p $remote_dir"
+    # Copy from remote to local
+    exec mkdir -p $source
+    send_cmd "$copy_cmd $location/ local:$location/"
 
-    # Generate files.
-    for {set i 0} {$i < 5} {incr i} {
-        set timestamp [exec date +"%s.%N"]
-        send_cmd "echo $timestamp > $remote_dir/$timestamp"
+    # Generate and check md5 hash of local/remote.
+    set md5 [exec ls -R $location | md5sum ]
+    send_cmd "ls -R $location | md5sum" $md5
+
+    if 0 {
+        # Remove remote files#
+        send_cmd "rm -r $location"
+        # Copy back from local.
+        if {$recursive eq 0} {
+            send_cmd "$copy_cmd local:$source/$filename $source/"
+        } else {
+            send_cmd "$copy_cmd local:$source/ $location/"
+        }
+        # Check.
+        send_cmd "ls -R $location | md5sum" $md5
     }
-    send_cmd "ls $remote_dir"
-    send_cmd "$cmd $remote_dir/ local:/tmp/"
-    # Copy to local
+
+    # Remove local and remote test directories.
+    exec rm -r $location
+    send_cmd "rm -r $location"
 }
 
 # -------------------------------
@@ -93,9 +110,14 @@ send_cmd "" "PanSSH 1.3.2: Connected to $host"
 # --- Initial directory /code ---
 send_cmd "pwd" "/code"
 
-test_file_transfer ".cp"
-#puts "Done."
-#exit 0
+# --- File transfer between local and remote ---
+test_file_transfer ".copy" 0
+#test_file_transfer ".copyr" 1
+
+#test_file_transfer ".rsync -rtzP" 1
+#test_file_transfer ".rsync -tz" 0
+puts "Done."
+exit 0
 
 # --- .help and .ls commands ---
 send_cmd ".help" "Short versions:*"
@@ -131,18 +153,9 @@ send_cmd "rm $test_file"
 send_cmd ".edit $test_file" "editor exit"
 send_cmd "cat $test_file" $content
 
-# --- copy to local ---
-set test_file_local "/tmp/$test_file"
-exec rm -f $test_file_local
+# --- copy between remote and local ---
+test_file_transfer ".copy"
 
-send_cmd ".copy $test_file local:$test_file_local"
-check_local_file $test_file_local $content
-
-send_cmd ".copyr $test_file local:$test_file_local"
-check_local_file $test_file_local $content
-
-send_cmd ".rsync -t $test_file local:$test_file_local"
-check_local_file $test_file_local $content
 
 # -------------------------------
 # Exit

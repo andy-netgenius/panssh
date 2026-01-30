@@ -369,7 +369,7 @@ handle_copy() {
 # --- Handle the .copyr (copy relative) command ---
 handle_copyr() {
     local -n cmd_args=$1
-    # Use rsync options: archive, compress, progress.
+    # Use rsync options: recurse, compress, progress.
     local args_with_opts=(-rtzP "${cmd_args[@]}")
     handle_rsync args_with_opts
     return $?
