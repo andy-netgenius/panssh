@@ -151,7 +151,7 @@ fi
 SSH_OPTIONS+=(
   -o ControlMaster=auto
   -o ControlPath="$TEMP_DIR/ssh.socket"
-  -o ControlPersist=5m
+  -o ControlPersist=0
 )
 
 # --- SSH wrapper with setup and tracking, used for interactive mode ---
