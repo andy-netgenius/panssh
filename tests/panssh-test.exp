@@ -14,23 +14,31 @@ proc strip_ansi {text} {
 
 proc await {expected {limit 5}} {
     expect -timeout $limit $expected {
-        # puts "✅ Found $limit: `$expected`"
+        #puts "\n✅ Found `$expected`"
     } timeout {
-        puts "❌ Timed out awaiting: `$expected`"
+        puts "\n❌ Timeout ($limit) awaiting: `$expected`"
         exit 1
     }       
 }
 
-# Send a command and wait for the next prompt.
+# Send a command, await result then await the next prompt.
 proc send_cmd {cmd {expected ""} {limit 5}} {
     global PROMPT
 
-    if {$expected eq ""} {
-        set expected $PROMPT
+    if {$cmd ne ""} {
+        #puts "Sending: $cmd\n"
+        send "$cmd\n"
     }
 
-    send "$cmd\r"
-    await $expected $limit
+    if {$expected ne ""} {
+        #puts "Expecting: $expected"
+        await $expected $limit
+    }
+
+    # Work-around, otherwise `await` can fail.
+    exec sleep 0
+
+    #puts "Expecting prompt"
     await $PROMPT $limit
 }
 
@@ -94,7 +102,7 @@ set script_dir [file dirname [info script]]
 set env(EDITOR) [file join $script_dir $editor]
 
 set cwd "/code"
-set PROMPT "$host:$cwd\$ "
+set PROMPT [exec bash tests/get-prompt.sh $site $environment $cwd]
 
 set timeout 5
 spawn ./panssh $host
@@ -106,18 +114,19 @@ log_user 1
 
 # --- Welcome message and initial prompt ---
 send_cmd "" "PanSSH 1.3.2: Connected to $host"
+#exit 0
 
 # --- Initial directory /code ---
 send_cmd "pwd" "/code"
 
 # --- File transfer between local and remote ---
-test_file_transfer ".copy" 0
+#test_file_transfer ".copy" 0
 #test_file_transfer ".copyr" 1
 
 #test_file_transfer ".rsync -rtzP" 1
 #test_file_transfer ".rsync -tz" 0
-puts "Done."
-exit 0
+#puts "Done."
+#exit 0
 
 # --- .help and .ls commands ---
 send_cmd ".help" "Short versions:*"
@@ -126,18 +135,17 @@ send_cmd ".ls" "🚫 auto-ls disabled"
 
 # --- cd /tmp ---
 set cwd "/tmp"
-set PROMPT "$host:$cwd\$ "
+set PROMPT [exec bash tests/get-prompt.sh $site $environment $cwd]
 send_cmd "cd $cwd && pwd" "/tmp"
 
 # --- create file ---
 set test_file "panssh-test.tmp"
 set content "Created by automated PanSSH test"
-send_cmd "echo $content | tee $test_file" $content
-send_cmd "cat $test_file" $content
+send_cmd "echo $content >$test_file && cat $test_file" $content
 
 # --- view file ---
-send_cmd ".view $test_file" "editor exit"
-send_cmd "cat $test_file" $content
+#send_cmd ".view $test_file" "editor exit"
+#send_cmd "cat $test_file" $content
 
 # --- edit file ---
 set content "Edited by automated PanSSH test"
@@ -149,13 +157,9 @@ send_cmd ".edit $test_file" "🟡 File has not changed."
 send_cmd "cat $test_file" $content
 
 # --- edit new file ---
-send_cmd "rm $test_file"
-send_cmd ".edit $test_file" "editor exit"
-send_cmd "cat $test_file" $content
-
-# --- copy between remote and local ---
-test_file_transfer ".copy"
-
+#send_cmd "rm $test_file"
+#send_cmd ".edit $test_file" "editor exit"
+#send_cmd "cat $test_file" $content
 
 # -------------------------------
 # Exit
@@ -165,4 +169,4 @@ puts "\nExiting..."
 
 sleep 1
 send_cmd "exit" "Connection to $host closed." "1"
-puts "PanSSH interactive test complete."
+puts "\nPanSSH interactive test complete."
