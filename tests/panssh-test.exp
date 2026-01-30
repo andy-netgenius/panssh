@@ -6,12 +6,6 @@
 # Helper procedures
 # -------------------------------
 
-# Remove ANSI escape sequences from text
-proc strip_ansi {text} {
-    regsub -all {\x1B\[[0-9;]*[A-Za-z]} $text "" text
-    return $text
-}
-
 proc await {expected {limit 5}} {
     expect -timeout $limit $expected {
         #puts "\n✅ Found `$expected`"
@@ -22,21 +16,20 @@ proc await {expected {limit 5}} {
 }
 
 # Send a command, await result then await the next prompt.
-proc send_cmd {cmd {expected ""} {limit 5}} {
+proc send_cmd {cmd {expected ""} {limit 5} {sleep 0}} {
     global PROMPT
 
     if {$cmd ne ""} {
         #puts "Sending: $cmd\n"
-        send "$cmd\n"
+        send "$cmd\r"
+        # Work-around, false failures otherwise, but why?
+        exec sleep $sleep
     }
 
     if {$expected ne ""} {
         #puts "Expecting: $expected"
         await $expected $limit
     }
-
-    # Work-around, otherwise `await` can fail.
-    exec sleep 0
 
     #puts "Expecting prompt"
     await $PROMPT $limit
@@ -114,10 +107,9 @@ log_user 1
 
 # --- Welcome message and initial prompt ---
 send_cmd "" "PanSSH 1.3.2: Connected to $host"
-#exit 0
 
 # --- Initial directory /code ---
-send_cmd "pwd" "/code"
+send_cmd "pwd" "/code" 5 0.5
 
 # --- File transfer between local and remote ---
 #test_file_transfer ".copy" 0
@@ -130,24 +122,28 @@ send_cmd "pwd" "/code"
 
 # --- .help and .ls commands ---
 send_cmd ".help" "Short versions:*"
-send_cmd ".ls" "✅ auto-ls enabled"
+send_cmd ".ls" "✅ auto-ls enabled" 
 send_cmd ".ls" "🚫 auto-ls disabled"
 
 # --- cd /tmp ---
 set cwd "/tmp"
 set PROMPT [exec bash tests/get-prompt.sh $site $environment $cwd]
-send_cmd "cd $cwd && pwd" "/tmp"
+send_cmd "cd $cwd && pwd" "/tmp" 5 0.3
 
-# --- create file ---
+# Set file name, delete any existing file.
 set test_file "panssh-test.tmp"
+send_cmd "rm -f $test_file" "" 5 0.3
+
+# --- edit (create) file ---
 set content "Created by automated PanSSH test"
-send_cmd "echo $content >$test_file && cat $test_file" $content
+send_cmd ".edit $test_file" "editor exit"
+send_cmd "cat $test_file" $content
 
 # --- view file ---
-#send_cmd ".view $test_file" "editor exit"
-#send_cmd "cat $test_file" $content
+send_cmd ".view $test_file" "editor exit"
+send_cmd "cat $test_file" $content
 
-# --- edit file ---
+# --- edit (update) file ---
 set content "Edited by automated PanSSH test"
 send_cmd ".edit $test_file" "editor exit"
 send_cmd "cat $test_file" $content
@@ -156,10 +152,8 @@ send_cmd "cat $test_file" $content
 send_cmd ".edit $test_file" "🟡 File has not changed."
 send_cmd "cat $test_file" $content
 
-# --- edit new file ---
-#send_cmd "rm $test_file"
-#send_cmd ".edit $test_file" "editor exit"
-#send_cmd "cat $test_file" $content
+# Clean up.
+send_cmd "rm $test_file"
 
 # -------------------------------
 # Exit
