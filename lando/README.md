@@ -1,17 +1,17 @@
 # 🖥️ PanSSH under Lando
 
-This file is an optional part of the [PanSSH](https://github.com/LastCallMedia/panssh) utility. It provides service and tooling setup to facilitate use of PanSSH under [Lando](https://lando.dev/).
+This file is an optional part of the [PanSSH](https://github.com/andyinman/panssh) utility. It provides service and tooling setup to facilitate use of PanSSH under [Lando](https://lando.dev/).
 
 ## ✅ Requirements
 
-- A Lando application built using the [Lando Pantheon Plugin](https://docs.lando.dev/plugins/pantheon/index.html) or other configuration which meets [PanSSH requirements](https://github.com/LastCallMedia/panssh/blob/main/README.md#-requirements).
+- A Lando application built using the [Lando Pantheon Plugin](https://docs.lando.dev/plugins/pantheon/index.html) or other configuration which meets [PanSSH requirements](https://github.com/andyinman/panssh/blob/main/README.md#-requirements).
 
 ## 📦 Installation
 
-1. Either clone the [PanSSH repository](https://github.com/LastCallMedia/panssh) or download `.lando.panssh.yml` directly:
+1. Either clone the [PanSSH repository](https://github.com/andyinman/panssh) or download `.lando.panssh.yml` directly:
 
 ```
-curl -so .lando.panssh.yml https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/lando/.lando.panssh.yml
+curl -so .lando.panssh.yml https://raw.githubusercontent.com/andyinman/panssh/refs/heads/lando/lando/.lando.panssh.yml
 ```
 2. Place `.lando.panssh.yml` in the same location as your application's `.lando.yml` file.
 

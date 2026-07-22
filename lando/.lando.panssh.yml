@@ -1,8 +1,8 @@
 # This file is an optional part of the PanSSH utility.
 # It provides service and tooling setup to facilitate use of PanSSH under Lando.
 
-# See: https://github.com/LastCallMedia/panssh
-# and: https://github.com/LastCallMedia/panssh/lando/README.md
+# See: https://github.com/andyinman/panssh
+# and: https://github.com/andyinman/panssh/lando/README.md
 
 # Commands provided:
 #
@@ -14,18 +14,18 @@ services:
     build_as_root:
       - echo "PanSSH installation..."
       # PanSSH  main script.
-      - curl -so /usr/local/bin/panssh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/panssh
+      - curl -so /usr/local/bin/panssh https://raw.githubusercontent.com/andyinman/panssh/refs/heads/lando/panssh
       - chmod +x /usr/local/bin/panssh
       # PanSSH readx utility script.
       - mkdir -p /usr/local/lib/panssh/
-      - curl -so /usr/local/lib/panssh/readx.source.sh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/readx.source.sh
+      - curl -so /usr/local/lib/panssh/readx.source.sh https://raw.githubusercontent.com/andyinman/panssh/refs/heads/lando/readx.source.sh
       # Bash tab-completion support and basic editor.
       - apt-get -qqq update && apt-get -qqq install bash-completion nano
       # Bash-completion support for the panssh command (and other commands available via `lando ssh`).
       #   For this to work, we would have to either uncomment /etc/bash.bashrc "enable bash completion" section,
       #   or include the equivalent in ~/.bashrc or some other suitable location.
       # - mkdir -p /usr/local/share/bash-completion/completions
-      # - curl -so /usr/share/bash-completion/completions/panssh https://raw.githubusercontent.com/LastCallMedia/panssh/refs/heads/lando/bash-completion/panssh
+      # - curl -so /usr/share/bash-completion/completions/panssh https://raw.githubusercontent.com/andyinman/panssh/refs/heads/lando/bash-completion/panssh
       - echo "PanSSH installation complete."
     build:
       # Run terminus (if available) to create the .panssh.sites file.
