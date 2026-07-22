@@ -1,0 +1,166 @@
+#!/usr/bin/expect -f
+# panssh-test.exp
+# Simple PanSSH interactive test harness
+
+# -------------------------------
+# Helper procedures
+# -------------------------------
+
+proc await {expected {limit 5}} {
+    expect -timeout $limit $expected {
+        #puts "\n✅ Found `$expected`"
+    } timeout {
+        puts "\n❌ Timeout ($limit) awaiting: `$expected`"
+        exit 1
+    }       
+}
+
+# Send a command, await result then await the next prompt.
+proc send_cmd {cmd {expected ""} {limit 5} {sleep 0}} {
+    global PROMPT
+
+    if {$cmd ne ""} {
+        #puts "Sending: $cmd\n"
+        send "$cmd\r"
+        # Work-around, false failures otherwise, but why?
+        exec sleep $sleep
+    }
+
+    if {$expected ne ""} {
+        #puts "Expecting: $expected"
+        await $expected $limit
+    }
+
+    #puts "Expecting prompt"
+    await $PROMPT $limit
+}
+
+# Test file transfer between local and remote.
+proc test_file_transfer {copy_cmd recursive} {
+
+    set location  "/tmp/panssh-test"
+    set source "$location/files"
+    set filename "panssh-test.tmp"
+
+    # Delete any existing directories.
+    exec rm -rf $location
+    send_cmd "rm -rf $location"
+
+    # Generate test files and sub-directory if needed.
+    if {$recursive eq 0} {
+        send_cmd "mkdir -p $source"
+        send_cmd "touch $source/$filename"
+    } else {
+        send_cmd "mkdir -p $source/subdir"
+        send_cmd "touch $source/$filename $source/subdir/$filename"
+    }
+
+    # Copy from remote to local
+    exec mkdir -p $source
+    send_cmd "$copy_cmd $location/ local:$location/"
+
+    # Generate and check md5 hash of local/remote.
+    set md5 [exec ls -R $location | md5sum ]
+    send_cmd "ls -R $location | md5sum" $md5
+
+    if 0 {
+        # Remove remote files#
+        send_cmd "rm -r $location"
+        # Copy back from local.
+        if {$recursive eq 0} {
+            send_cmd "$copy_cmd local:$source/$filename $source/"
+        } else {
+            send_cmd "$copy_cmd local:$source/ $location/"
+        }
+        # Check.
+        send_cmd "ls -R $location | md5sum" $md5
+    }
+
+    # Remove local and remote test directories.
+    exec rm -r $location
+    send_cmd "rm -r $location"
+}
+
+# -------------------------------
+# Start PanSSH session
+# -------------------------------
+
+set site "ngd11"
+set environment "dev"
+set host "$site.$environment"
+
+# Find directory of this script
+set editor "editor-test.sh"
+set script_dir [file dirname [info script]]
+set env(EDITOR) [file join $script_dir $editor]
+
+set cwd "/code"
+set PROMPT [exec bash tests/get-prompt.sh $site $environment $cwd]
+
+set timeout 5
+spawn ./panssh $host
+
+# Debug: log all output to stdout
+log_user 1
+
+# ----- Tests -----
+
+# --- Welcome message and initial prompt ---
+send_cmd "" "PanSSH 1.3.2: Connected to $host"
+
+# --- Initial directory /code ---
+send_cmd "pwd" "/code" 5 0.5
+
+# --- File transfer between local and remote ---
+#test_file_transfer ".copy" 0
+#test_file_transfer ".copyr" 1
+
+#test_file_transfer ".rsync -rtzP" 1
+#test_file_transfer ".rsync -tz" 0
+#puts "Done."
+#exit 0
+
+# --- .help and .ls commands ---
+send_cmd ".help" "Short versions:*"
+send_cmd ".ls" "✅ auto-ls enabled" 
+send_cmd ".ls" "🚫 auto-ls disabled"
+
+# --- cd /tmp ---
+set cwd "/tmp"
+set PROMPT [exec bash tests/get-prompt.sh $site $environment $cwd]
+send_cmd "cd $cwd && pwd" "/tmp" 5 0.3
+
+# Set file name, delete any existing file.
+set test_file "panssh-test.tmp"
+send_cmd "rm -f $test_file" "" 5 0.3
+
+# --- edit (create) file ---
+set content "Created by automated PanSSH test"
+send_cmd ".edit $test_file" "editor exit"
+send_cmd "cat $test_file" $content
+
+# --- view file ---
+send_cmd ".view $test_file" "editor exit"
+send_cmd "cat $test_file" $content
+
+# --- edit (update) file ---
+set content "Edited by automated PanSSH test"
+send_cmd ".edit $test_file" "editor exit"
+send_cmd "cat $test_file" $content
+
+# --- edit file (unchanged) ---
+send_cmd ".edit $test_file" "🟡 File has not changed."
+send_cmd "cat $test_file" $content
+
+# Clean up.
+send_cmd "rm $test_file"
+
+# -------------------------------
+# Exit
+# -------------------------------
+
+puts "\nExiting..."
+
+sleep 1
+send_cmd "exit" "Connection to $host closed." "1"
+puts "\nPanSSH interactive test complete."
