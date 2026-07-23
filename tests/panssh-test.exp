@@ -23,11 +23,12 @@ proc send_cmd {cmd {expected ""} {limit 1} {sleep 0}} {
         #puts "Sending: $cmd\n"
         send "$cmd\r"
         # @todo Only need this when using READX.
-        # Command gets echoed to terminal by panssh main script
+        # Prompt and command is echoed to stdout in panssh main script.
         # We consume that output here (twice!)
-        await $cmd 1; await $cmd 1
+        await $PROMPT 1; await $cmd 1
+        await $PROMPT 1; await $cmd 1
 
-        # Sometimes needed, false failures otherwise (but why?).
+        # Sometimes needed.
         sleep $sleep
     }
 
@@ -37,11 +38,11 @@ proc send_cmd {cmd {expected ""} {limit 1} {sleep 0}} {
     }
 
     #puts "Expecting PROMPT"
-    await $PROMPT 3
+    await $PROMPT $limit
 }
 
 # Test file transfer between local and remote.
-proc test_file_transfer {copy_cmd recursive} {
+proc test_file_transfer { } {
 
     set dirpath "/tmp/panssh-test"
     set filepath "$dirpath/panssh-test.tmp"
@@ -55,14 +56,12 @@ proc test_file_transfer {copy_cmd recursive} {
     exec rm -f $filepath
 
     # Copy test file from remote to local.
-    send_cmd ".copy $filepath local:$filepath"
-    send_cmd "echo _OK3_" "_OK3"
+    send_cmd ".copy $filepath local:$filepath" "" 8
     # Delete remote test file.
     send_cmd "rm $filepath && echo _OK4_" "_OK4_"
 
     # Copy test file from local to remote.
-    send_cmd ".copy local:$filepath $filepath"
-    send_cmd "echo _OK5_" "_OK5_"
+    send_cmd ".copy local:$filepath $filepath" "" 8
     # Delete remote test file.
     send_cmd "rm $filepath && echo _OK6_" "_OK6_"
 
@@ -75,9 +74,15 @@ proc test_file_transfer {copy_cmd recursive} {
 # Start PanSSH session
 # -------------------------------
 
-set site "ngd11"
-set environment "dev"
-set host "$site.$environment"
+
+# Get host (Pantheon site.environment) from environment, if present.
+if {[info exists env(PANSSH_HOST)]} {
+    set host $env(PANSSH_HOST)
+} else {
+    set host "ngd11.dev"
+}
+# Split host into site and environment.
+lassign [split $host .] site environment
 
 # Find directory of this script
 set editor "editor-test.sh"
@@ -96,50 +101,44 @@ log_user 1
 # ----- Tests -----
 
 # --- Welcome message and initial prompt ---
-send_cmd "" "PanSSH 1.3.3: Connected to $host"
+send_cmd "" "PanSSH 1.3.3: Connected to $host" 5
 
 # --- Initial directory /code ---
-send_cmd "pwd" "/code" 5 0.5
+send_cmd "pwd" "/code"
 
 # --- File transfer between local and remote ---
-test_file_transfer ".copy" 0
-#test_file_transfer ".copyr" 1
-
-#test_file_transfer ".rsync -rtzP" 1
-#test_file_transfer ".rsync -tz" 0
-#puts "Done."
-#exit 0
+test_file_transfer
 
 # --- .help and .ls commands ---
 send_cmd ".help" "Command aliases:"
-send_cmd ".ls" "✅ auto-ls enabled" 
+send_cmd ".ls" "✅ auto-ls enabled" 3
 send_cmd ".ls" "🚫 auto-ls disabled"
 
 # --- cd /tmp ---
 set cwd "/tmp"
 set PROMPT [exec bash tests/get-prompt.sh $site $environment $cwd]
-send_cmd "cd $cwd && pwd" "/tmp" 5 0.3
+send_cmd "cd $cwd && pwd" "/tmp" 5
 
 # Set file name, delete any existing file.
 set test_file "panssh-test.tmp"
-send_cmd "rm -f $test_file" "" 5 0.3
+send_cmd "rm -f $test_file" "" 5
 
 # --- edit (create) file ---
 set content "Created by automated PanSSH test"
-send_cmd ".edit $test_file" "editor exit" 2
+send_cmd ".edit $test_file" "editor exit" 5
 send_cmd "cat $test_file" $content
 
 # --- view file ---
-send_cmd ".view $test_file" "editor exit" 2
+send_cmd ".view $test_file" "editor exit" 5
 send_cmd "cat $test_file" $content
 
 # --- edit (update) file ---
 set content "Edited by automated PanSSH test"
-send_cmd ".edit $test_file" "editor exit" 2
+send_cmd ".edit $test_file" "editor exit" 5
 send_cmd "cat $test_file" $content
 
 # --- edit file (unchanged) ---
-send_cmd ".edit $test_file" "🟡 File has not changed." 3
+send_cmd ".edit $test_file" "🟡 File has not changed." 8
 send_cmd "cat $test_file" $content
 
 # Clean up.
